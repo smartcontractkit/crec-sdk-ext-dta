@@ -7,7 +7,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/stretchr/testify/require"
 
-	v0 "github.com/smartcontractkit/crec-sdk-ext-dta/v0.1"
+	v0 "github.com/smartcontractkit/crec-sdk-ext-dta/v0"
 )
 
 func TestDtaV0_New(t *testing.T) {

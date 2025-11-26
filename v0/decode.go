@@ -2,459 +2,377 @@ package v0
 
 import (
 	"context"
-	// "encoding/base64" // Commented out - not used after migration
 	"encoding/json"
 	"fmt"
-	"math/big"
 	"strconv"
-	"time"
 
 	"github.com/ethereum/go-ethereum/common"
 	apiClient "github.com/smartcontractkit/crec-api-go/client"
+	"github.com/smartcontractkit/crec-sdk-ext-dta/parsing"
+	"github.com/smartcontractkit/crec-sdk-ext-dta/types"
 )
 
-// ConcreteEvent represents any decoded concrete event payload.
-type ConcreteEvent interface{}
+// Type aliases for shared types
+type (
+	ConcreteEvent = types.ConcreteEvent
+	Event         = types.Event
+	Metadata      = types.Metadata
+	WorkflowEvent = types.WorkflowEvent
+	Transaction   = types.Transaction
+	Attribute     = types.Attribute
+	Attrs         = types.Attrs
+)
 
-// VerifiableEvent represents an event structure that encapsulates data about the event, its metadata, and associated blockchain transaction details.
+// VerifiableEvent wraps the shared VerifiableEvent type to add version-specific methods.
 type VerifiableEvent struct {
-	CreatedAt   time.Time   `json:"createdAt"`
-	Event       Event       `json:"event"`
-	Metadata    Metadata    `json:"metadata"`
-	Transaction Transaction `json:"transaction"`
-
-	// ConcreteEvent holds the decoded concrete event based on the event name and using the fields in `VerifiableEvent.Metadata.WorkflowEvent.Attributes`
-	ConcreteEvent ConcreteEvent `json:"-"`
+	types.VerifiableEvent
 }
 
-type Event struct {
-	Type      string `json:"type"`
-	Name      string `json:"name"`
-	Address   string `json:"address"`
-	RequestId string `json:"requestId"`
-	TopicHash string `json:"topicHash"`
-}
-type Metadata struct {
-	ChainId       string        `json:"chainId"`
-	Network       string        `json:"network"`
-	WorkflowEvent WorkflowEvent `json:"workflowEvent"`
-}
-type WorkflowEvent struct {
-	Attributes      Attrs     `json:"attributes"`
-	BusinessEventId string    `json:"business_event_id"`
-	Component       string    `json:"component"`
-	EventTimestamp  time.Time `json:"event_timestamp"`
-	EventTypeLabel  string    `json:"event_type_label"`
-	Failed          bool      `json:"failed"`
-	FinalEvent      bool      `json:"final_event"`
-	Id              string    `json:"id"`
-	Participant     string    `json:"participant"`
-	ParticipantRole string    `json:"participant_role"`
-	ProcessLabels   []string  `json:"process_labels"`
-	RawData         string    `json:"raw_data"`
-	Title           string    `json:"title"`
-}
-type Transaction struct {
-	Timestamp int    `json:"timestamp"`
-	ChainId   string `json:"chainId"`
-	Hash      string `json:"hash"`
+// EventName determines and returns the event name from the workflow attributes or outer event name;
+// defaults to EventUnknown if not resolvable.
+func (v VerifiableEvent) EventName() EventName {
+	return types.GetEventName(v.VerifiableEvent, EventUnknown, parseEvent)
 }
 
-type Attribute struct {
-	Key        string `json:"key"`
-	OnChain    bool   `json:"on_chain"`
-	Value      string `json:"value"`
-	Visibility string `json:"visibility"`
-}
-
-type Attrs map[string]Attribute
-
-// Has checks if the specified key exists in the Attrs map. Returns true if the key is present; otherwise, false.
-func (a Attrs) Has(key string) bool {
-	_, ok := a[key]
-	return ok
-}
-
-// Get retrieves the value and existence status of the specified key from the Attrs map. Returns the value and true if key exists, otherwise an empty string and false.
-func (a Attrs) Get(key string) (string, bool) {
-	v, ok := a[key]
-	return v.Value, ok
-}
-
-// Require retrieves the value of the specified key from the Attrs map. Returns an error if the key is missing or its value is empty.
-func (a Attrs) Require(key string) (string, error) {
-	if v, ok := a.Get(key); ok && v != "" {
-		return v, nil
-	}
-	return "", fmt.Errorf("missing required attribute %q", key)
-}
-
-// Default returns the value associated with the specified key if it exists and is non-empty; otherwise, it returns the provided default value.
-func (a Attrs) Default(key, def string) string {
-	if v, ok := a.Get(key); ok && v != "" {
-		return v
-	}
-	return def
-}
-
-// UnmarshalJSON implements custom decoding to populate the concrete event
-// from the attribute map. It determines the event name using the "event_type" attribute
-// (or falls back to the outer Event.Name), then maps attributes into the struct fields.
-func (v *VerifiableEvent) UnmarshalJSON(b []byte) error {
+// unmarshalVerifiableEvent implements version-specific unmarshaling to populate ConcreteEvent.
+// v0 uses Metadata.WorkflowEvent.Attributes to extract event data.
+func unmarshalVerifiableEvent(data []byte, v *types.VerifiableEvent) error {
 	// Use an alias to avoid infinite recursion
-	type alias VerifiableEvent
+	type alias types.VerifiableEvent
 	var a alias
-	if err := json.Unmarshal(b, &a); err != nil {
+	if err := json.Unmarshal(data, &a); err != nil {
 		return fmt.Errorf("failed to unmarshal VerifiableEvent envelope: %w", err)
 	}
 
 	// Copy envelope to receiver
-	*v = VerifiableEvent(a)
-	name := v.EventName()
+	*v = types.VerifiableEvent(a)
+
+	// Wrap to get EventName method
+	wrapped := VerifiableEvent{VerifiableEvent: *v}
+	name := wrapped.EventName()
+
+	// Helper to get attribute value
+	getAttr := func(key string) string {
+		if attr, ok := v.Metadata.WorkflowEvent.Attributes[key]; ok {
+			return attr.Value
+		}
+		return ""
+	}
 
 	// Create the concrete event instance
 	var concrete ConcreteEvent
 	switch name {
 	case EventDistributorRegistered:
 		concrete = &DistributorRegistered{
-			DistributorAddr: common.HexToAddress(v.Metadata.WorkflowEvent.Attributes["distributor_addr"].Value),
+			DistributorAddr: common.HexToAddress(getAttr("distributor_addr")),
 		}
 	case EventDistributorRequestCanceled:
 		concrete = &DistributorRequestCanceled{
-			FundTokenId:     common.HexToHash(v.Metadata.WorkflowEvent.Attributes["fund_token_id"].Value),
-			DistributorAddr: common.HexToAddress(v.Metadata.WorkflowEvent.Attributes["distributor_addr"].Value),
-			RequestId:       common.HexToHash(v.Metadata.WorkflowEvent.Attributes["request_id"].Value),
+			FundTokenId:     common.HexToHash(getAttr("fund_token_id")),
+			DistributorAddr: common.HexToAddress(getAttr("distributor_addr")),
+			RequestId:       common.HexToHash(getAttr("request_id")),
 		}
 	case EventDistributorRequestProcessed:
-		shares, ok := new(big.Int).SetString(v.Metadata.WorkflowEvent.Attributes["shares"].Value, 10)
+		shares, ok := parsing.ScientificNotationToBigInt(getAttr("shares"))
 		if !ok {
-			return fmt.Errorf("event %s unable to parse shares: %s", name, v.Metadata.WorkflowEvent.Attributes["shares"].Value)
+			return fmt.Errorf("event %s unable to parse shares: %s", name, getAttr("shares"))
 		}
-		status, err := strconv.ParseUint(v.Metadata.WorkflowEvent.Attributes["status"].Value, 10, 8) // base 10, fit into uint8
+		status, err := strconv.ParseUint(getAttr("status"), 10, 8)
 		if err != nil {
-			return fmt.Errorf("event %s unable to parse status: %s", name, v.Metadata.WorkflowEvent.Attributes["status"].Value)
+			return fmt.Errorf("event %s unable to parse status: %s", name, getAttr("status"))
 		}
 		concrete = &DistributorRequestProcessed{
-			RequestId: common.HexToHash(v.Metadata.WorkflowEvent.Attributes["request_id"].Value),
+			RequestId: common.HexToHash(getAttr("request_id")),
 			Shares:    shares,
 			Status:    uint8(status),
-			Error:     []byte(v.Metadata.WorkflowEvent.Attributes["error"].Value),
+			Error:     []byte(getAttr("error")),
 		}
 	case EventDistributorRequestProcessing:
-		shares, ok := new(big.Int).SetString(v.Metadata.WorkflowEvent.Attributes["shares"].Value, 10)
+		shares, ok := parsing.ScientificNotationToBigInt(getAttr("shares"))
 		if !ok {
-			return fmt.Errorf("event %s unable to parse shares: %s", name, v.Metadata.WorkflowEvent.Attributes["shares"].Value)
+			return fmt.Errorf("event %s unable to parse shares: %s", name, getAttr("shares"))
 		}
-		amount, ok := new(big.Int).SetString(v.Metadata.WorkflowEvent.Attributes["amount"].Value, 10)
+		amount, ok := parsing.ScientificNotationToBigInt(getAttr("amount"))
 		if !ok {
-			return fmt.Errorf("event %s unable to parse amount: %s", name, v.Metadata.WorkflowEvent.Attributes["amount"].Value)
+			return fmt.Errorf("event %s unable to parse amount: %s", name, getAttr("amount"))
 		}
 		concrete = &DistributorRequestProcessing{
-			FundTokenId:     common.HexToHash(v.Metadata.WorkflowEvent.Attributes["fund_token_id"].Value),
-			DistributorAddr: common.HexToAddress(v.Metadata.WorkflowEvent.Attributes["distributor_addr"].Value),
-			RequestId:       common.HexToHash(v.Metadata.WorkflowEvent.Attributes["request_id"].Value),
+			FundTokenId:     common.HexToHash(getAttr("fund_token_id")),
+			DistributorAddr: common.HexToAddress(getAttr("distributor_addr")),
+			RequestId:       common.HexToHash(getAttr("request_id")),
 			Shares:          shares,
 			Amount:          amount,
 		}
 	case EventFundAdminRegistered:
 		concrete = &FundAdminRegistered{
-			FundAdminAddr: common.HexToAddress(v.Metadata.WorkflowEvent.Attributes["fund_admin_addr"].Value),
+			FundAdminAddr: common.HexToAddress(getAttr("fund_admin_addr")),
 		}
 	case EventFundTokenAllowlistUpdated:
-		allowed, err := strconv.ParseBool(v.Metadata.WorkflowEvent.Attributes["allowed"].Value)
+		allowed, err := strconv.ParseBool(getAttr("allowed"))
 		if err != nil {
-			return fmt.Errorf("event %s unable to parse allowed: %s", name, v.Metadata.WorkflowEvent.Attributes["allowed"].Value)
+			return fmt.Errorf("event %s unable to parse allowed: %s", name, getAttr("allowed"))
 		}
 		concrete = &FundTokenAllowlistUpdated{
-			FundAdminAddr:   common.HexToAddress(v.Metadata.WorkflowEvent.Attributes["fund_admin_addr"].Value),
-			FundTokenId:     common.HexToHash(v.Metadata.WorkflowEvent.Attributes["fund_token_id"].Value),
-			DistributorAddr: common.HexToAddress(v.Metadata.WorkflowEvent.Attributes["distributor_addr"].Value),
+			FundAdminAddr:   common.HexToAddress(getAttr("fund_admin_addr")),
+			FundTokenId:     common.HexToHash(getAttr("fund_token_id")),
+			DistributorAddr: common.HexToAddress(getAttr("distributor_addr")),
 			Allowed:         allowed,
 		}
 	case EventFundTokenRegistered:
-		tokenChainSelector, err := strconv.ParseUint(v.Metadata.WorkflowEvent.Attributes["token_chain_selector"].Value, 10, 64)
+		tokenChainSelector, err := strconv.ParseUint(getAttr("token_chain_selector"), 10, 64)
 		if err != nil {
-			return fmt.Errorf("event %s unable to parse token_chain_selector: %s", name, v.Metadata.WorkflowEvent.Attributes["token_chain_selector"].Value)
+			return fmt.Errorf("event %s unable to parse token_chain_selector: %s", name, getAttr("token_chain_selector"))
 		}
 		concrete = &FundTokenRegistered{
-			FundAdminAddr:      common.HexToAddress(v.Metadata.WorkflowEvent.Attributes["fund_admin_addr"].Value),
-			FundTokenId:        common.HexToHash(v.Metadata.WorkflowEvent.Attributes["fund_token_id"].Value),
-			FundTokenAddr:      common.HexToAddress(v.Metadata.WorkflowEvent.Attributes["fund_token_addr"].Value),
-			NavAddr:            common.HexToAddress(v.Metadata.WorkflowEvent.Attributes["nav_addr"].Value),
+			FundAdminAddr:      common.HexToAddress(getAttr("fund_admin_addr")),
+			FundTokenId:        common.HexToHash(getAttr("fund_token_id")),
+			FundTokenAddr:      common.HexToAddress(getAttr("fund_token_addr")),
+			NavAddr:            common.HexToAddress(getAttr("nav_addr")),
 			TokenChainSelector: tokenChainSelector,
 		}
 	case EventInitialized:
-		version, err := strconv.ParseUint(v.Metadata.WorkflowEvent.Attributes["version"].Value, 10, 64)
+		version, err := strconv.ParseUint(getAttr("version"), 10, 64)
 		if err != nil {
-			return fmt.Errorf("event %s unable to parse version: %s", name, v.Metadata.WorkflowEvent.Attributes["version"].Value)
+			return fmt.Errorf("event %s unable to parse version: %s", name, getAttr("version"))
 		}
 		concrete = &Initialized{Version: version}
 	case EventInvalidDTAWallet:
-		actualChainSelector, err := strconv.ParseUint(v.Metadata.WorkflowEvent.Attributes["actual_chain_selector"].Value, 10, 64)
+		actualChainSelector, err := strconv.ParseUint(getAttr("actual_chain_selector"), 10, 64)
 		if err != nil {
-			return fmt.Errorf("event %s unable to parse actual_chain_selector: %s", name, v.Metadata.WorkflowEvent.Attributes["actual_chain_selector"].Value)
+			return fmt.Errorf("event %s unable to parse actual_chain_selector: %s", name, getAttr("actual_chain_selector"))
 		}
 		concrete = &InvalidDTAWallet{
-			FundAdminAddr:            common.HexToAddress(v.Metadata.WorkflowEvent.Attributes["fund_admin_addr"].Value),
-			FundTokenId:              common.HexToHash(v.Metadata.WorkflowEvent.Attributes["fund_token_id"].Value),
-			RequestId:                common.HexToHash(v.Metadata.WorkflowEvent.Attributes["request_id"].Value),
+			FundAdminAddr:            common.HexToAddress(getAttr("fund_admin_addr")),
+			FundTokenId:              common.HexToHash(getAttr("fund_token_id")),
+			RequestId:                common.HexToHash(getAttr("request_id")),
 			ActualChainSelector:      actualChainSelector,
-			ActualDTAAdminWalletAddr: common.HexToAddress(v.Metadata.WorkflowEvent.Attributes["actual_dta_admin_wallet_addr"].Value),
+			ActualDTAAdminWalletAddr: common.HexToAddress(getAttr("actual_dta_admin_wallet_addr")),
 		}
 	case EventMessageFailed:
 		concrete = &MessageFailed{
-			MessageId: common.HexToHash(v.Metadata.WorkflowEvent.Attributes["message_id"].Value),
-			Reason:    []byte(v.Metadata.WorkflowEvent.Attributes["reason"].Value),
+			MessageId: common.HexToHash(getAttr("message_id")),
+			Reason:    []byte(getAttr("reason")),
 		}
 	case EventNativeFundsRecovered:
-		amount, ok := new(big.Int).SetString(v.Metadata.WorkflowEvent.Attributes["amount"].Value, 10)
+		amount, ok := parsing.ScientificNotationToBigInt(getAttr("amount"))
 		if !ok {
-			return fmt.Errorf("event %s unable to parse amount: %s", name, v.Metadata.WorkflowEvent.Attributes["amount"].Value)
+			return fmt.Errorf("event %s unable to parse amount: %s", name, getAttr("amount"))
 		}
 		concrete = &NativeFundsRecovered{
-			To:     common.HexToAddress(v.Metadata.WorkflowEvent.Attributes["to"].Value),
+			To:     common.HexToAddress(getAttr("to")),
 			Amount: amount,
 		}
 	case EventOwnershipTransferred:
 		concrete = &OwnershipTransferred{
-			PreviousOwner: common.HexToAddress(v.Metadata.WorkflowEvent.Attributes["previous_owner"].Value),
-			NewOwner:      common.HexToAddress(v.Metadata.WorkflowEvent.Attributes["new_owner"].Value),
+			PreviousOwner: common.HexToAddress(getAttr("previous_owner")),
+			NewOwner:      common.HexToAddress(getAttr("new_owner")),
 		}
 	case EventRedemptionRequested:
-		shares, ok := new(big.Int).SetString(v.Metadata.WorkflowEvent.Attributes["shares"].Value, 10)
+		shares, ok := parsing.ScientificNotationToBigInt(getAttr("shares"))
 		if !ok {
-			return fmt.Errorf("event %s unable to parse shares: %s", name, v.Metadata.WorkflowEvent.Attributes["shares"].Value)
+			return fmt.Errorf("event %s unable to parse shares: %s", name, getAttr("shares"))
 		}
-		createdAt, err := strconv.ParseUint(v.Metadata.WorkflowEvent.Attributes["created_at"].Value, 10, 64)
+		createdAt, err := strconv.ParseUint(getAttr("created_at"), 10, 64)
 		if err != nil {
-			return fmt.Errorf("event %s unable to parse created_at: %s", name, v.Metadata.WorkflowEvent.Attributes["created_at"].Value)
+			return fmt.Errorf("event %s unable to parse created_at: %s", name, getAttr("created_at"))
 		}
 		concrete = &RedemptionRequested{
-			FundTokenId:     common.HexToHash(v.Metadata.WorkflowEvent.Attributes["fund_token_id"].Value),
-			DistributorAddr: common.HexToAddress(v.Metadata.WorkflowEvent.Attributes["distributor_addr"].Value),
-			RequestId:       common.HexToHash(v.Metadata.WorkflowEvent.Attributes["request_id"].Value),
+			FundTokenId:     common.HexToHash(getAttr("fund_token_id")),
+			DistributorAddr: common.HexToAddress(getAttr("distributor_addr")),
+			RequestId:       common.HexToHash(getAttr("request_id")),
 			Shares:          shares,
 			CreatedAt:       createdAt,
 		}
 	case EventSubscriptionRequested:
-		amount, ok := new(big.Int).SetString(v.Metadata.WorkflowEvent.Attributes["amount"].Value, 10)
+		amount, ok := parsing.ScientificNotationToBigInt(getAttr("amount"))
 		if !ok {
-			return fmt.Errorf("event %s unable to parse amount: %s", name, v.Metadata.WorkflowEvent.Attributes["amount"].Value)
+			return fmt.Errorf("event %s unable to parse amount: %s", name, getAttr("amount"))
 		}
-		createdAt, err := strconv.ParseUint(v.Metadata.WorkflowEvent.Attributes["created_at"].Value, 10, 64)
+		createdAt, err := strconv.ParseUint(getAttr("created_at"), 10, 64)
 		if err != nil {
-			return fmt.Errorf("event %s unable to parse created_at: %s", name, v.Metadata.WorkflowEvent.Attributes["created_at"].Value)
+			return fmt.Errorf("event %s unable to parse created_at: %s", name, getAttr("created_at"))
 		}
 		concrete = &SubscriptionRequested{
-			FundTokenId:     common.HexToHash(v.Metadata.WorkflowEvent.Attributes["fund_token_id"].Value),
-			DistributorAddr: common.HexToAddress(v.Metadata.WorkflowEvent.Attributes["distributor_addr"].Value),
-			RequestId:       common.HexToHash(v.Metadata.WorkflowEvent.Attributes["request_id"].Value),
+			FundTokenId:     common.HexToHash(getAttr("fund_token_id")),
+			DistributorAddr: common.HexToAddress(getAttr("distributor_addr")),
+			RequestId:       common.HexToHash(getAttr("request_id")),
 			Amount:          amount,
 			CreatedAt:       createdAt,
 		}
 	case EventAnswerUpdated:
-		current, ok := new(big.Int).SetString(v.Metadata.WorkflowEvent.Attributes["current"].Value, 10)
+		current, ok := parsing.ScientificNotationToBigInt(getAttr("current"))
 		if !ok {
-			return fmt.Errorf("event %s unable to parse current: %s", name, v.Metadata.WorkflowEvent.Attributes["current"].Value)
+			return fmt.Errorf("event %s unable to parse current: %s", name, getAttr("current"))
 		}
-		roundId, ok := new(big.Int).SetString(v.Metadata.WorkflowEvent.Attributes["roundId"].Value, 10)
+		roundId, ok := parsing.ScientificNotationToBigInt(getAttr("roundId"))
 		if !ok {
-			return fmt.Errorf("event %s unable to parse roundId: %s", name, v.Metadata.WorkflowEvent.Attributes["roundId"].Value)
+			return fmt.Errorf("event %s unable to parse roundId: %s", name, getAttr("roundId"))
 		}
-		updatedAt, ok := new(big.Int).SetString(v.Metadata.WorkflowEvent.Attributes["updatedAt"].Value, 10)
+		updatedAt, ok := parsing.ScientificNotationToBigInt(getAttr("updatedAt"))
 		if !ok {
-			return fmt.Errorf("event %s unable to parse updatedAt: %s", name, v.Metadata.WorkflowEvent.Attributes["updatedAt"].Value)
+			return fmt.Errorf("event %s unable to parse updatedAt: %s", name, getAttr("updatedAt"))
 		}
 		concrete = &AnswerUpdated{Current: current, RoundId: roundId, UpdatedAt: updatedAt}
 	case EventCCIPMessageRecvFailed:
 		concrete = &CCIPMessageRecvFailed{
-			MessageId: common.HexToHash(v.Metadata.WorkflowEvent.Attributes["message_id"].Value),
-			Reason:    []byte(v.Metadata.WorkflowEvent.Attributes["reason"].Value),
+			MessageId: common.HexToHash(getAttr("message_id")),
+			Reason:    []byte(getAttr("reason")),
 		}
 	case EventDTAAdded:
-		dtaChainSelector, err := strconv.ParseUint(v.Metadata.WorkflowEvent.Attributes["dta_chain_selector"].Value, 10, 64)
+		dtaChainSelector, err := strconv.ParseUint(getAttr("dta_chain_selector"), 10, 64)
 		if err != nil {
-			return fmt.Errorf("event %s unable to parse dta_chain_selector: %s", name, v.Metadata.WorkflowEvent.Attributes["dta_chain_selector"].Value)
+			return fmt.Errorf("event %s unable to parse dta_chain_selector: %s", name, getAttr("dta_chain_selector"))
 		}
 		concrete = &DTAAdded{
-			DtaAddr:          common.HexToAddress(v.Metadata.WorkflowEvent.Attributes["dta_addr"].Value),
+			DtaAddr:          common.HexToAddress(getAttr("dta_addr")),
 			DtaChainSelector: dtaChainSelector,
-			FundTokenId:      common.HexToHash(v.Metadata.WorkflowEvent.Attributes["fund_token_id"].Value),
-			FundTokenAddr:    common.HexToAddress(v.Metadata.WorkflowEvent.Attributes["fund_token_addr"].Value),
+			FundTokenId:      common.HexToHash(getAttr("fund_token_id")),
+			FundTokenAddr:    common.HexToAddress(getAttr("fund_token_addr")),
 		}
 	case EventDTARemoved:
-		dtaChainSelector, err := strconv.ParseUint(v.Metadata.WorkflowEvent.Attributes["dta_chain_selector"].Value, 10, 64)
+		dtaChainSelector, err := strconv.ParseUint(getAttr("dta_chain_selector"), 10, 64)
 		if err != nil {
-			return fmt.Errorf("event %s unable to parse dta_chain_selector: %s", name, v.Metadata.WorkflowEvent.Attributes["dta_chain_selector"].Value)
+			return fmt.Errorf("event %s unable to parse dta_chain_selector: %s", name, getAttr("dta_chain_selector"))
 		}
 		concrete = &DTARemoved{
-			DtaAddr:          common.HexToAddress(v.Metadata.WorkflowEvent.Attributes["dta_addr"].Value),
+			DtaAddr:          common.HexToAddress(getAttr("dta_addr")),
 			DtaChainSelector: dtaChainSelector,
-			FundTokenId:      common.HexToHash(v.Metadata.WorkflowEvent.Attributes["fund_token_id"].Value),
+			FundTokenId:      common.HexToHash(getAttr("fund_token_id")),
 		}
 	case EventDTASettlementClosed:
-		requestType, err := strconv.ParseUint(v.Metadata.WorkflowEvent.Attributes["request_type"].Value, 10, 8)
+		requestType, err := strconv.ParseUint(getAttr("request_type"), 10, 8)
 		if err != nil {
-			return fmt.Errorf("event %s unable to parse request_type: %s", name, v.Metadata.WorkflowEvent.Attributes["request_type"].Value)
+			return fmt.Errorf("event %s unable to parse request_type: %s", name, getAttr("request_type"))
 		}
-		dtaChainSelector, err := strconv.ParseUint(v.Metadata.WorkflowEvent.Attributes["dta_chain_selector"].Value, 10, 64)
+		dtaChainSelector, err := strconv.ParseUint(getAttr("dta_chain_selector"), 10, 64)
 		if err != nil {
-			return fmt.Errorf("event %s unable to parse dta_chain_selector: %s", name, v.Metadata.WorkflowEvent.Attributes["dta_chain_selector"].Value)
+			return fmt.Errorf("event %s unable to parse dta_chain_selector: %s", name, getAttr("dta_chain_selector"))
 		}
-		success, err := strconv.ParseBool(v.Metadata.WorkflowEvent.Attributes["success"].Value)
+		success, err := strconv.ParseBool(getAttr("success"))
 		if err != nil {
-			return fmt.Errorf("event %s unable to parse success: %s", name, v.Metadata.WorkflowEvent.Attributes["success"].Value)
+			return fmt.Errorf("event %s unable to parse success: %s", name, getAttr("success"))
 		}
 		concrete = &DTASettlementClosed{
-			DistributorAddr:  common.HexToAddress(v.Metadata.WorkflowEvent.Attributes["distributor_addr"].Value),
+			DistributorAddr:  common.HexToAddress(getAttr("distributor_addr")),
 			RequestType:      uint8(requestType),
-			FundTokenId:      common.HexToHash(v.Metadata.WorkflowEvent.Attributes["fund_token_id"].Value),
+			FundTokenId:      common.HexToHash(getAttr("fund_token_id")),
 			DtaChainSelector: dtaChainSelector,
-			DtaAddr:          common.HexToAddress(v.Metadata.WorkflowEvent.Attributes["dta_addr"].Value),
-			RequestId:        common.HexToHash(v.Metadata.WorkflowEvent.Attributes["request_id"].Value),
+			DtaAddr:          common.HexToAddress(getAttr("dta_addr")),
+			RequestId:        common.HexToHash(getAttr("request_id")),
 			Success:          success,
-			Err:              []byte(v.Metadata.WorkflowEvent.Attributes["err"].Value),
+			Err:              []byte(getAttr("err")),
 		}
 	case EventDTASettlementOpened:
-		requestType, err := strconv.ParseUint(v.Metadata.WorkflowEvent.Attributes["request_type"].Value, 10, 8)
+		requestType, err := strconv.ParseUint(getAttr("request_type"), 10, 8)
 		if err != nil {
-			return fmt.Errorf("event %s unable to parse request_type: %s", name, v.Metadata.WorkflowEvent.Attributes["request_type"].Value)
+			return fmt.Errorf("event %s unable to parse request_type: %s", name, getAttr("request_type"))
 		}
-		dtaChainSelector, err := strconv.ParseUint(v.Metadata.WorkflowEvent.Attributes["dta_chain_selector"].Value, 10, 64)
+		dtaChainSelector, err := strconv.ParseUint(getAttr("dta_chain_selector"), 10, 64)
 		if err != nil {
-			return fmt.Errorf("event %s unable to parse dta_chain_selector: %s", name, v.Metadata.WorkflowEvent.Attributes["dta_chain_selector"].Value)
+			return fmt.Errorf("event %s unable to parse dta_chain_selector: %s", name, getAttr("dta_chain_selector"))
 		}
-		shares, ok := new(big.Int).SetString(v.Metadata.WorkflowEvent.Attributes["shares"].Value, 10)
+		shares, ok := parsing.ScientificNotationToBigInt(getAttr("shares"))
 		if !ok {
-			return fmt.Errorf("event %s unable to parse shares: %s", name, v.Metadata.WorkflowEvent.Attributes["shares"].Value)
+			return fmt.Errorf("event %s unable to parse shares: %s", name, getAttr("shares"))
 		}
-		amount, ok := new(big.Int).SetString(v.Metadata.WorkflowEvent.Attributes["amount"].Value, 10)
+		amount, ok := parsing.ScientificNotationToBigInt(getAttr("amount"))
 		if !ok {
-			return fmt.Errorf("event %s unable to parse amount: %s", name, v.Metadata.WorkflowEvent.Attributes["amount"].Value)
+			return fmt.Errorf("event %s unable to parse amount: %s", name, getAttr("amount"))
 		}
-		currency, err := strconv.ParseUint(v.Metadata.WorkflowEvent.Attributes["currency"].Value, 10, 8)
+		currency, err := strconv.ParseUint(getAttr("currency"), 10, 8)
 		if err != nil {
-			return fmt.Errorf("event %s unable to parse currency: %s", name, v.Metadata.WorkflowEvent.Attributes["currency"].Value)
+			return fmt.Errorf("event %s unable to parse currency: %s", name, getAttr("currency"))
 		}
 		concrete = &DTASettlementOpened{
-			DistributorAddr:       common.HexToAddress(v.Metadata.WorkflowEvent.Attributes["distributor_addr"].Value),
+			DistributorAddr:       common.HexToAddress(getAttr("distributor_addr")),
 			RequestType:           uint8(requestType),
-			FundTokenId:           common.HexToHash(v.Metadata.WorkflowEvent.Attributes["fund_token_id"].Value),
-			FundAdminAddr:         common.HexToAddress(v.Metadata.WorkflowEvent.Attributes["fund_admin_addr"].Value),
+			FundTokenId:           common.HexToHash(getAttr("fund_token_id")),
+			FundAdminAddr:         common.HexToAddress(getAttr("fund_admin_addr")),
 			DtaChainSelector:      dtaChainSelector,
-			DtaAddr:               common.HexToAddress(v.Metadata.WorkflowEvent.Attributes["dta_addr"].Value),
-			RequestId:             common.HexToHash(v.Metadata.WorkflowEvent.Attributes["request_id"].Value),
-			DistributorWalletAddr: common.HexToAddress(v.Metadata.WorkflowEvent.Attributes["distributor_wallet_addr"].Value),
+			DtaAddr:               common.HexToAddress(getAttr("dta_addr")),
+			RequestId:             common.HexToHash(getAttr("request_id")),
+			DistributorWalletAddr: common.HexToAddress(getAttr("distributor_wallet_addr")),
 			Shares:                shares,
 			Amount:                amount,
 			Currency:              uint8(currency),
 		}
 	case EventEmptyRequestType:
 		concrete = &EmptyRequestType{
-			MessageId: common.HexToHash(v.Metadata.WorkflowEvent.Attributes["message_id"].Value),
-			RequestId: common.HexToHash(v.Metadata.WorkflowEvent.Attributes["request_id"].Value),
+			MessageId: common.HexToHash(getAttr("message_id")),
+			RequestId: common.HexToHash(getAttr("request_id")),
 		}
 	case EventInsufficientPaymentTokenBalance:
-		amount, ok := new(big.Int).SetString(v.Metadata.WorkflowEvent.Attributes["amount"].Value, 10)
+		amount, ok := parsing.ScientificNotationToBigInt(getAttr("amount"))
 		if !ok {
-			return fmt.Errorf("event %s unable to parse amount: %s", name, v.Metadata.WorkflowEvent.Attributes["amount"].Value)
+			return fmt.Errorf("event %s unable to parse amount: %s", name, getAttr("amount"))
 		}
 		concrete = &InsufficientPaymentTokenBalance{
-			FundTokenId:           common.HexToHash(v.Metadata.WorkflowEvent.Attributes["fund_token_id"].Value),
-			DistributorAddr:       common.HexToAddress(v.Metadata.WorkflowEvent.Attributes["distributor_addr"].Value),
-			DistributorWalletAddr: common.HexToAddress(v.Metadata.WorkflowEvent.Attributes["distributor_wallet_addr"].Value),
-			RequestId:             common.HexToHash(v.Metadata.WorkflowEvent.Attributes["request_id"].Value),
+			FundTokenId:           common.HexToHash(getAttr("fund_token_id")),
+			DistributorAddr:       common.HexToAddress(getAttr("distributor_addr")),
+			DistributorWalletAddr: common.HexToAddress(getAttr("distributor_wallet_addr")),
+			RequestId:             common.HexToHash(getAttr("request_id")),
 			Amount:                amount,
 		}
 	case EventSettlementFailed:
-		shares, ok := new(big.Int).SetString(v.Metadata.WorkflowEvent.Attributes["shares"].Value, 10)
+		shares, ok := parsing.ScientificNotationToBigInt(getAttr("shares"))
 		if !ok {
-			return fmt.Errorf("event %s unable to parse shares: %s", name, v.Metadata.WorkflowEvent.Attributes["shares"].Value)
+			return fmt.Errorf("event %s unable to parse shares: %s", name, getAttr("shares"))
 		}
-		amount, ok := new(big.Int).SetString(v.Metadata.WorkflowEvent.Attributes["amount"].Value, 10)
+		amount, ok := parsing.ScientificNotationToBigInt(getAttr("amount"))
 		if !ok {
-			return fmt.Errorf("event %s unable to parse amount: %s", name, v.Metadata.WorkflowEvent.Attributes["amount"].Value)
+			return fmt.Errorf("event %s unable to parse amount: %s", name, getAttr("amount"))
 		}
 		concrete = &SettlementFailed{
-			FundTokenId:           common.HexToHash(v.Metadata.WorkflowEvent.Attributes["fund_token_id"].Value),
-			DistributorAddr:       common.HexToAddress(v.Metadata.WorkflowEvent.Attributes["distributor_addr"].Value),
-			PaymentTokenAddr:      common.HexToAddress(v.Metadata.WorkflowEvent.Attributes["payment_token_addr"].Value),
-			DistributorWalletAddr: common.HexToAddress(v.Metadata.WorkflowEvent.Attributes["distributor_wallet_addr"].Value),
-			RequestId:             common.HexToHash(v.Metadata.WorkflowEvent.Attributes["request_id"].Value),
+			FundTokenId:           common.HexToHash(getAttr("fund_token_id")),
+			DistributorAddr:       common.HexToAddress(getAttr("distributor_addr")),
+			PaymentTokenAddr:      common.HexToAddress(getAttr("payment_token_addr")),
+			DistributorWalletAddr: common.HexToAddress(getAttr("distributor_wallet_addr")),
+			RequestId:             common.HexToHash(getAttr("request_id")),
 			Shares:                shares,
 			Amount:                amount,
-			ErrData:               []byte(v.Metadata.WorkflowEvent.Attributes["err_data"].Value),
+			ErrData:               []byte(getAttr("err_data")),
 		}
 	case EventTokenWithdrawn:
-		amount, ok := new(big.Int).SetString(v.Metadata.WorkflowEvent.Attributes["amount"].Value, 10)
+		amount, ok := parsing.ScientificNotationToBigInt(getAttr("amount"))
 		if !ok {
-			return fmt.Errorf("event %s unable to parse amount: %s", name, v.Metadata.WorkflowEvent.Attributes["amount"].Value)
+			return fmt.Errorf("event %s unable to parse amount: %s", name, getAttr("amount"))
 		}
 		concrete = &TokenWithdrawn{
-			Token:     common.HexToAddress(v.Metadata.WorkflowEvent.Attributes["token"].Value),
-			Recipient: common.HexToAddress(v.Metadata.WorkflowEvent.Attributes["recipient"].Value),
+			Token:     common.HexToAddress(getAttr("token")),
+			Recipient: common.HexToAddress(getAttr("recipient")),
 			Amount:    amount,
 		}
 	case EventUnauthorizedSenderDTA:
-		reqType, err := strconv.ParseUint(v.Metadata.WorkflowEvent.Attributes["req_type"].Value, 10, 8)
+		reqType, err := strconv.ParseUint(getAttr("req_type"), 10, 8)
 		if err != nil {
-			return fmt.Errorf("event %s unable to parse req_type: %s", name, v.Metadata.WorkflowEvent.Attributes["req_type"].Value)
+			return fmt.Errorf("event %s unable to parse req_type: %s", name, getAttr("req_type"))
 		}
-		dtaChainSelector, err := strconv.ParseUint(v.Metadata.WorkflowEvent.Attributes["dta_chain_selector"].Value, 10, 64)
+		dtaChainSelector, err := strconv.ParseUint(getAttr("dta_chain_selector"), 10, 64)
 		if err != nil {
-			return fmt.Errorf("event %s unable to parse dta_chain_selector: %s", name, v.Metadata.WorkflowEvent.Attributes["dta_chain_selector"].Value)
+			return fmt.Errorf("event %s unable to parse dta_chain_selector: %s", name, getAttr("dta_chain_selector"))
 		}
 		concrete = &UnauthorizedSenderDTA{
-			DtaAddr:          common.HexToAddress(v.Metadata.WorkflowEvent.Attributes["dta_addr"].Value),
+			DtaAddr:          common.HexToAddress(getAttr("dta_addr")),
 			DtaChainSelector: dtaChainSelector,
-			FundTokenId:      common.HexToHash(v.Metadata.WorkflowEvent.Attributes["fund_token_id"].Value),
-			DistributorAddr:  common.HexToAddress(v.Metadata.WorkflowEvent.Attributes["distributor_addr"].Value),
-			RequestId:        common.HexToHash(v.Metadata.WorkflowEvent.Attributes["request_id"].Value),
+			FundTokenId:      common.HexToHash(getAttr("fund_token_id")),
+			DistributorAddr:  common.HexToAddress(getAttr("distributor_addr")),
+			RequestId:        common.HexToHash(getAttr("request_id")),
 			ReqType:          uint8(reqType),
 		}
 	default:
-		return fmt.Errorf("unsupported event type: %s", v.Metadata.WorkflowEvent.Attributes["event_type"].Value)
+		return fmt.Errorf("unsupported event type: %s", getAttr("event_type"))
 	}
 
 	v.ConcreteEvent = concrete
 	return nil
 }
 
-// Decode parses a base64-encoded JSON string from the event and unmarshals it into a VerifiableEvent. It returns an error if decoding or unmarshalling fails.
-//
-// COMMENTED OUT: event.VerifiableEvent no longer exists in new Event structure
-// TODO: Update to work with new Event structure from channels-based API
-// This function is used to decode DTA marketplace events (v0.1)
-func Decode(ctx context.Context, event apiClient.Event) (VerifiableEvent, error) {
-	return VerifiableEvent{}, fmt.Errorf("Decode is temporarily disabled - needs migration to new Event structure")
-	// decodedBytes, err := base64.StdEncoding.DecodeString(event.VerifiableEvent)
-	// if err != nil {
-	// 	return VerifiableEvent{}, err
-	// }
-	//
-	// var verifiableEvent VerifiableEvent
-	// if err = json.Unmarshal(decodedBytes, &verifiableEvent); err != nil {
-	// 	return VerifiableEvent{}, err
-	// }
-	//
-	// return verifiableEvent, nil
-}
-
-// EventName determines and returns the event name from the workflow attributes or outer event name; defaults to EventUnknown if not resolvable.
-func (v VerifiableEvent) EventName() EventName {
-	var name EventName
-	if attr, ok := v.Metadata.WorkflowEvent.Attributes["event_type"]; ok {
-		if ev, ok := parseEvent(attr.Value); ok {
-			name = ev
-		}
+// DecodeFromEvent extracts the WatcherEventPayload from an apiClient.Event and converts it
+// to a VerifiableEvent with the ConcreteEvent populated based on the event type.
+func DecodeFromEvent(ctx context.Context, event apiClient.Event) (VerifiableEvent, error) {
+	ve, err := types.DecodeFromEvent(ctx, event, unmarshalVerifiableEvent)
+	if err != nil {
+		return VerifiableEvent{}, err
 	}
-	if name == "" && v.Event.Name != "" {
-		if ev, ok := parseEvent(v.Event.Name); ok {
-			name = ev
-		}
-	}
-	if name == "" {
-		return EventUnknown
-	}
-	return name
+	return VerifiableEvent{VerifiableEvent: ve}, nil
 }

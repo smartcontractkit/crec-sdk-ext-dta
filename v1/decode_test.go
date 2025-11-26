@@ -1,487 +1,178 @@
 package v1_test
 
 import (
+	"context"
+	"encoding/json"
 	"math/big"
 	"testing"
 	"time"
 
+	"github.com/ethereum/go-ethereum/common"
+	apiClient "github.com/smartcontractkit/crec-api-go/client"
+	v1 "github.com/smartcontractkit/crec-sdk-ext-dta/v1"
 	"github.com/stretchr/testify/require"
-	// COMMENTED OUT: Imports for disabled tests
-	// "context"
-	// "encoding/base64"
-	// "encoding/json"
-	// "github.com/ethereum/go-ethereum/common"
-	// apiClient "github.com/smartcontractkit/crec-api-go/client"
 )
 
-// COMMENTED OUT: Test disabled - needs migration to new Event structure
-// Event.VerifiableEvent field no longer exists in the new API
-// Decode() is temporarily disabled pending migration
-/*
-func TestDecodeSimple(t *testing.T) {
-	type testCase struct {
-		name          string
-		event         apiClient.Event
-		expectErr     bool
-		expectedEvent VerifiableEvent
+// buildWatcherEventPayload creates a WatcherEventPayload with the given data for testing
+func buildWatcherEventPayload(eventName string, data map[string]interface{}) apiClient.WatcherEventPayload {
+	return apiClient.WatcherEventPayload{
+		Address:       "0x1234567890123456789012345678901234567890",
+		ChainSelector: "1",
+		Event: apiClient.WatcherEvent{
+			Data:      data,
+			EventName: eventName,
+			LogIndex:  0,
+			Timestamp: time.Unix(1234567890, 0),
+			TopicHash: "0xabcdef",
+		},
+		Transaction: apiClient.EventTransaction{
+			Hash:      "0xdeadbeef",
+			Timestamp: 1234567890,
+		},
+		Type:      apiClient.WatcherEventPayloadTypeWatcherEvent,
+		WatcherId: "test-watcher",
 	}
+}
 
-	validVerifiableEvent := VerifiableEvent{
-		CreatedAt: time.Now(),
-		Event: Event{
-			Name:     "exampleName",
-			Address:  "exampleAddress",
-			Service:  "dta",
-			LogIndex: 1,
-			Parameters: map[string]string{
-				"distributor_addr": "exampleAddress",
-			},
-			TopicHash:   "exampleTopicHash",
-			BlockNumber: 12345,
-		},
-		Metadata: Metadata{
-			WorkflowEvent: WorkflowEvent{
-				Component: "event-listener-dta",
-				Attributes: map[string]Attribute{
-					"event_type":       {Value: EventDistributorRegistered.String()},
-					"distributor_addr": {Value: "exampleAddress"},
-				},
-				ProcessLabels:  []string{"dta"},
-				EventTypeLabel: EventDistributorRegistered.String(),
-			},
-		},
-		Parameters: map[string]string{
-			"distributor_addr": "exampleAddress",
-		},
-		Transaction: Transaction{
-			Hash:        "0xexampleHash",
-			ChainId:     "1337",
-			Timestamp:   1234567890,
-			BlockNumber: 12345,
-		},
-	}
+// buildEvent creates an apiClient.Event from a WatcherEventPayload
+func buildEvent(t *testing.T, payload apiClient.WatcherEventPayload) apiClient.Event {
+	t.Helper()
 
-	validVerifiableEventBytes, _ := json.Marshal(validVerifiableEvent)
-	validBase64 := base64.StdEncoding.EncodeToString(validVerifiableEventBytes)
-	var expectedVerifiableEvent VerifiableEvent
-	_ = json.Unmarshal(validVerifiableEventBytes, &expectedVerifiableEvent)
-
-	cases := []testCase{
-		{
-			name: "Valid base64 and valid JSON",
-			event: apiClient.Event{
-				VerifiableEvent: validBase64,
-			},
-			expectErr:     false,
-			expectedEvent: expectedVerifiableEvent,
-		},
-		{
-			name: "Invalid base64 string",
-			event: apiClient.Event{
-				VerifiableEvent: "invalid-base64",
-			},
-			expectErr: true,
-		},
-		{
-			name: "Valid base64 but invalid JSON",
-			event: apiClient.Event{
-				VerifiableEvent: base64.StdEncoding.EncodeToString([]byte("invalid-json")),
-			},
-			expectErr: true,
-		},
-		{
-			name: "Empty verifiable event",
-			event: apiClient.Event{
-				VerifiableEvent: "",
-			},
-			expectErr: true,
-		},
-	}
-
-	for _, tc := range cases {
-		t.Run(
-			tc.name, func(t *testing.T) {
-				ctx := context.Background()
-				result, err := Decode(ctx, tc.event.VerifiableEvent)
-
-				if tc.expectErr {
-					require.Error(t, err)
-				} else {
+	var event apiClient.Event
+	err := event.Payload.FromWatcherEventPayload(payload)
 					require.NoError(t, err)
-					require.Equal(t, tc.expectedEvent, result)
-				}
-			},
-		)
-	}
-}
-*/
-
-// helper to build a verifiable event envelope with parameters
-func buildEnvelope(attrs map[string]string, overrideEventName string) VerifiableEvent {
-	ve := VerifiableEvent{}
-	ve.CreatedAt = time.Unix(0, 0)
-	// set outer event name for fallback logic
-	ve.Event.Name = overrideEventName
-	ve.Event.Parameters = make(map[string]string)
-	ve.Parameters = make(map[string]string)
-	ve.Metadata.WorkflowEvent.Attributes = make(Attrs)
-	for k, v := range attrs {
-		// Populate Event.Parameters, Parameters, and Attributes for compatibility
-		ve.Event.Parameters[k] = v
-		ve.Parameters[k] = v
-		ve.Metadata.WorkflowEvent.Attributes[k] = Attribute{Key: k, Value: v}
-	}
-	return ve
+	return event
 }
 
-// COMMENTED OUT: Helper function disabled - uses VerifiableEvent field that no longer exists
-/*
-func encodeEvent(t *testing.T, ve VerifiableEvent) apiClient.Event {
-	b, err := json.Marshal(ve)
+func TestDecodeFromEvent_DistributorRegistered(t *testing.T) {
+	data := map[string]interface{}{
+		"distributor_addr": "0x00000000000000000000000000000000000000aa",
+	}
+
+	payload := buildWatcherEventPayload(v1.EventDistributorRegistered.String(), data)
+	event := buildEvent(t, payload)
+
+	result, err := v1.DecodeFromEvent(context.Background(), event)
 	require.NoError(t, err)
-	return apiClient.Event{VerifiableEvent: base64.StdEncoding.EncodeToString(b)}
-}
-*/
 
-// COMMENTED OUT: Test disabled - needs migration to new Event structure
-// Uses encodeEvent() which relies on VerifiableEvent field that no longer exists
-/*
-func TestDecodeUnmarshal(t *testing.T) {
-	cases := []struct {
-		name          string
-		attrs         map[string]string
-		overrideName  string
-		wantEventName EventName
-		wantEvent     ConcreteEvent
-		wantErr       bool
-	}{
-		{
-			name: "DistributorRequestProcessed_Success",
-			attrs: map[string]string{
-				"event_type": EventDistributorRequestProcessed.String(),
+	require.Equal(t, v1.EventDistributorRegistered, result.EventName())
+
+	concrete, ok := result.ConcreteEvent.(*v1.DistributorRegistered)
+	require.True(t, ok, "expected *DistributorRegistered, got %T", result.ConcreteEvent)
+	require.Equal(t, common.HexToAddress("0x00000000000000000000000000000000000000aa"), concrete.DistributorAddr)
+}
+
+func TestDecodeFromEvent_DistributorRequestProcessed(t *testing.T) {
+	data := map[string]interface{}{
 				"request_id": common.HexToHash("0x01").Hex(),
 				"shares":     "12345678901234567890",
 				"status":     "7",
 				"error":      "some-bytes",
-			},
-			overrideName:  "",
-			wantEventName: EventDistributorRequestProcessed,
-			wantEvent: &DistributorRequestProcessed{
-				RequestId: common.HexToHash("0x01"),
-				Shares:    func() *big.Int { i, _ := new(big.Int).SetString("12345678901234567890", 10); return i }(),
-				Status:    uint8(7),
-				Error:     []byte("some-bytes"),
-			},
-		},
-		{
-			name: "SubscriptionRequested_Success_And_FallbackName",
-			attrs: map[string]string{
+	}
+
+	payload := buildWatcherEventPayload(v1.EventDistributorRequestProcessed.String(), data)
+	event := buildEvent(t, payload)
+
+	result, err := v1.DecodeFromEvent(context.Background(), event)
+	require.NoError(t, err)
+
+	require.Equal(t, v1.EventDistributorRequestProcessed, result.EventName())
+
+	concrete, ok := result.ConcreteEvent.(*v1.DistributorRequestProcessed)
+	require.True(t, ok, "expected *DistributorRequestProcessed, got %T", result.ConcreteEvent)
+	require.Equal(t, common.HexToHash("0x01"), concrete.RequestId)
+
+	expectedShares, _ := new(big.Int).SetString("12345678901234567890", 10)
+	require.Equal(t, expectedShares, concrete.Shares)
+	require.Equal(t, uint8(7), concrete.Status)
+	require.Equal(t, []byte("some-bytes"), concrete.Error)
+}
+
+func TestDecodeFromEvent_SubscriptionRequested(t *testing.T) {
+	data := map[string]interface{}{
 				"fund_token_id":    common.HexToHash("0x02").Hex(),
 				"distributor_addr": common.HexToAddress("0x00000000000000000000000000000000000000aa").Hex(),
 				"request_id":       common.HexToHash("0x03").Hex(),
 				"amount":           "42",
 				"created_at":       "12345",
-			},
-			overrideName:  EventSubscriptionRequested.String(),
-			wantEventName: EventSubscriptionRequested,
-			wantEvent: &SubscriptionRequested{
-				FundTokenId:     common.HexToHash("0x02"),
-				DistributorAddr: common.HexToAddress("0x00000000000000000000000000000000000000aa"),
-				RequestId:       common.HexToHash("0x03"),
-				Amount:          big.NewInt(42),
-				CreatedAt:       uint64(12345),
-			},
-		},
-		{
-			name: "ErrorOnInvalidNumeric",
-			attrs: map[string]string{
-				"event_type": EventInitialized.String(),
-				"version":    "not-a-number",
-			},
-			wantErr: true,
-		},
-		{
-			name: "UnsupportedEvent",
-			attrs: map[string]string{
-				"event_type": "SomeUnknownEvent",
-			},
-			wantErr: true,
-		},
 	}
 
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			ve := buildEnvelope(tc.attrs, tc.overrideName)
-			ev, err := Decode(t.Context(), encodeEvent(t, ve).VerifiableEvent)
+	payload := buildWatcherEventPayload(v1.EventSubscriptionRequested.String(), data)
+	event := buildEvent(t, payload)
 
-			if tc.wantErr {
-				require.Error(t, err)
-				return
-			}
-
+	result, err := v1.DecodeFromEvent(context.Background(), event)
 			require.NoError(t, err)
-			require.Equal(t, tc.wantEventName, ev.EventName())
-			require.Equal(t, tc.wantEvent, ev.ConcreteEvent)
-		})
-	}
+
+	require.Equal(t, v1.EventSubscriptionRequested, result.EventName())
+
+	concrete, ok := result.ConcreteEvent.(*v1.SubscriptionRequested)
+	require.True(t, ok, "expected *SubscriptionRequested, got %T", result.ConcreteEvent)
+	require.Equal(t, common.HexToHash("0x02"), concrete.FundTokenId)
+	require.Equal(t, common.HexToAddress("0x00000000000000000000000000000000000000aa"), concrete.DistributorAddr)
+	require.Equal(t, common.HexToHash("0x03"), concrete.RequestId)
+	require.Equal(t, big.NewInt(42), concrete.Amount)
+	require.Equal(t, uint64(12345), concrete.CreatedAt)
 }
-*/
 
-func TestParseScientificNotationToBigInt(t *testing.T) {
+func TestDecodeFromEvent_ScientificNotation(t *testing.T) {
 	tests := []struct {
-		name     string
-		input    string
-		expected string // string representation of expected big.Int
-		wantOk   bool
+		name           string
+		eventType      string
+		amountValue    string
+		expectedAmount string
+		expectError    bool
 	}{
-		// Regular decimal numbers
 		{
-			name:     "Simple integer",
-			input:    "123456789",
-			expected: "123456789",
-			wantOk:   true,
+			name:           "Scientific notation amount",
+			eventType:      v1.EventSubscriptionRequested.String(),
+			amountValue:    "1.2e+21",
+			expectedAmount: "1200000000000000000000",
+			expectError:    false,
 		},
 		{
-			name:     "Zero",
-			input:    "0",
-			expected: "0",
-			wantOk:   true,
+			name:           "Large scientific notation",
+			eventType:      v1.EventSubscriptionRequested.String(),
+			amountValue:    "5e18",
+			expectedAmount: "5000000000000000000",
+			expectError:    false,
 		},
 		{
-			name:     "Large integer",
-			input:    "123456789012345678901234567890",
-			expected: "123456789012345678901234567890",
-			wantOk:   true,
-		},
-
-		// Scientific notation - positive exponents
-		{
-			name:     "Simple scientific notation",
-			input:    "1e18",
-			expected: "1000000000000000000",
-			wantOk:   true,
+			name:           "Decimal amount with zeros",
+			eventType:      v1.EventSubscriptionRequested.String(),
+			amountValue:    "600000000000000000000.000000",
+			expectedAmount: "600000000000000000000",
+			expectError:    false,
 		},
 		{
-			name:     "Scientific notation with decimal",
-			input:    "1.2e+21",
-			expected: "1200000000000000000000",
-			wantOk:   true,
+			name:           "Simple decimal (non-zero fractional) should fail",
+			eventType:      v1.EventSubscriptionRequested.String(),
+			amountValue:    "123.456",
+			expectedAmount: "",
+			expectError:    true,
 		},
 		{
-			name:     "Scientific notation uppercase E",
-			input:    "5E20",
-			expected: "500000000000000000000",
-			wantOk:   true,
-		},
-		{
-			name:     "Scientific notation with plus sign",
-			input:    "3.14e+5",
-			expected: "314000",
-			wantOk:   true,
-		},
-		{
-			name:     "Large scientific notation",
-			input:    "1.23456789e+30",
-			expected: "1234567890000000000000000000000",
-			wantOk:   true,
-		},
-
-		// Scientific notation - negative exponents (should truncate to integer)
-		{
-			name:     "Scientific notation negative exponent small",
-			input:    "1.5e-1",
-			expected: "0", // truncated to integer
-			wantOk:   true,
-		},
-		{
-			name:     "Scientific notation negative exponent zero result",
-			input:    "5e-10",
-			expected: "0", // truncated to integer
-			wantOk:   true,
-		},
-		{
-			name:     "Scientific notation that becomes integer",
-			input:    "1.23e2",
-			expected: "123",
-			wantOk:   true,
-		},
-
-		// Edge cases
-		{
-			name:     "Very large scientific notation",
-			input:    "1e100",
-			expected: "10000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
-			wantOk:   true,
-		},
-		{
-			name:     "Scientific notation with many decimal places",
-			input:    "1.23456789123456789e+20",
-			expected: "123456789123456789000",
-			wantOk:   true,
-		},
-
-		// Decimal numbers without scientific notation
-		{
-			name:     "Decimal number with zeros",
-			input:    "600000000000000000000.000000",
-			expected: "600000000000000000000",
-			wantOk:   true,
-		},
-		{
-			name:     "Simple decimal number with non-zero fractional part",
-			input:    "123.456",
-			expected: "",
-			wantOk:   false, // Should fail because fractional part is not all zeros
-		},
-		{
-			name:     "Decimal number with integer zero but non-zero fractional part",
-			input:    "0.123456",
-			expected: "",
-			wantOk:   false, // Should fail because fractional part is not all zeros
-		},
-		{
-			name:     "Large decimal number with non-zero fractional part",
-			input:    "999999999999999999999.999999999",
-			expected: "",
-			wantOk:   false, // Should fail because fractional part is not all zeros
-		},
-		{
-			name:     "Decimal with single digit",
-			input:    "5.0",
-			expected: "5",
-			wantOk:   true,
-		},
-
-		// Invalid inputs
-		{
-			name:     "Invalid format",
-			input:    "not-a-number",
-			expected: "",
-			wantOk:   false,
-		},
-		{
-			name:     "Empty string",
-			input:    "",
-			expected: "",
-			wantOk:   false,
-		},
-		{
-			name:     "Invalid scientific notation",
-			input:    "1e",
-			expected: "",
-			wantOk:   false,
-		},
-		{
-			name:     "Multiple decimal points",
-			input:    "1.2.3e10",
-			expected: "",
-			wantOk:   false,
-		},
-		{
-			name:     "Invalid exponent",
-			input:    "1eabc",
-			expected: "",
-			wantOk:   false,
+			name:           "Invalid amount should fail",
+			eventType:      v1.EventSubscriptionRequested.String(),
+			amountValue:    "invalid-amount",
+			expectedAmount: "",
+			expectError:    true,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result, ok := parseScientificNotationToBigInt(tt.input)
-
-			require.Equal(t, tt.wantOk, ok, "parseScientificNotationToBigInt(%q) ok = %v, want %v", tt.input, ok, tt.wantOk)
-
-			if tt.wantOk && ok {
-				expected := new(big.Int)
-				expected.SetString(tt.expected, 10)
-				require.Equal(t, expected, result, "parseScientificNotationToBigInt(%q) = %v, want %v", tt.input, result, expected)
-			}
-		})
-	}
-}
-
-// COMMENTED OUT: Test disabled - needs migration to new Event structure
-// Uses encodeEvent() which relies on VerifiableEvent field that no longer exists
-/*
-func TestScientificNotationInEventParsing(t *testing.T) {
-	tests := []struct {
-		name                   string
-		eventType              string
-		amountValue            string
-		sharesValue            string
-		expectError            bool
-		expectedAmountOrShares string
-	}{
-		{
-			name:                   "SubscriptionRequested with scientific notation amount",
-			eventType:              EventSubscriptionRequested.String(),
-			amountValue:            "1.2e+21",
-			expectedAmountOrShares: "1200000000000000000000",
-			expectError:            false,
-		},
-		{
-			name:                   "SubscriptionRequested with large scientific notation",
-			eventType:              EventSubscriptionRequested.String(),
-			amountValue:            "5e18",
-			expectedAmountOrShares: "5000000000000000000",
-			expectError:            false,
-		},
-		{
-			name:                   "RedemptionRequested with scientific notation shares",
-			eventType:              EventRedemptionRequested.String(),
-			sharesValue:            "3.14159e+20",
-			expectedAmountOrShares: "314159000000000000000",
-			expectError:            false,
-		},
-		{
-			name:                   "SubscriptionRequested with decimal amount (issue case)",
-			eventType:              EventSubscriptionRequested.String(),
-			amountValue:            "600000000000000000000.000000",
-			expectedAmountOrShares: "600000000000000000000",
-			expectError:            false,
-		},
-		{
-			name:                   "SubscriptionRequested with simple decimal (non-zero fractional)",
-			eventType:              EventSubscriptionRequested.String(),
-			amountValue:            "123.456",
-			expectedAmountOrShares: "",
-			expectError:            true, // Should error because fractional part is not all zeros
-		},
-		{
-			name:        "SubscriptionRequested with invalid scientific notation",
-			eventType:   EventSubscriptionRequested.String(),
-			amountValue: "invalid-amount",
-			expectError: true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			var attrs map[string]string
-
-			switch tt.eventType {
-			case EventSubscriptionRequested.String():
-				attrs = map[string]string{
-					"event_type":       tt.eventType,
+			data := map[string]interface{}{
 					"fund_token_id":    common.HexToHash("0x02").Hex(),
-					"distributor_addr": common.HexToAddress("0x00000000000000000000000000000000000000aa").Hex(),
+				"distributor_addr": common.HexToAddress("0xaa").Hex(),
 					"request_id":       common.HexToHash("0x03").Hex(),
 					"amount":           tt.amountValue,
 					"created_at":       "12345",
 				}
-			case EventRedemptionRequested.String():
-				attrs = map[string]string{
-					"event_type":       tt.eventType,
-					"fund_token_id":    common.HexToHash("0x02").Hex(),
-					"distributor_addr": common.HexToAddress("0x00000000000000000000000000000000000000aa").Hex(),
-					"request_id":       common.HexToHash("0x03").Hex(),
-					"shares":           tt.sharesValue,
-					"created_at":       "12345",
-				}
-			}
 
-			ve := buildEnvelope(attrs, "")
-			ev, err := Decode(context.Background(), encodeEvent(t, ve).VerifiableEvent)
+			payload := buildWatcherEventPayload(tt.eventType, data)
+			event := buildEvent(t, payload)
+
+			result, err := v1.DecodeFromEvent(context.Background(), event)
 
 			if tt.expectError {
 				require.Error(t, err)
@@ -490,235 +181,101 @@ func TestScientificNotationInEventParsing(t *testing.T) {
 
 			require.NoError(t, err)
 
-			// Verify the parsed value matches expected
+			concrete, ok := result.ConcreteEvent.(*v1.SubscriptionRequested)
+			require.True(t, ok)
+
 			expected := new(big.Int)
-			expected.SetString(tt.expectedAmountOrShares, 10)
-
-			switch concreteEvent := ev.ConcreteEvent.(type) {
-			case *SubscriptionRequested:
-				require.Equal(t, expected, concreteEvent.Amount, "Amount should match expected value")
-			case *RedemptionRequested:
-				require.Equal(t, expected, concreteEvent.Shares, "Shares should match expected value")
-			default:
-				t.Fatalf("Unexpected concrete event type: %T", concreteEvent)
-			}
-		})
-	}
-}
-*/
-
-func TestParseScientificNotationToUint64(t *testing.T) {
-	tests := []struct {
-		name        string
-		input       string
-		expected    uint64
-		expectError bool
-	}{
-		// Regular decimal numbers
-		{
-			name:        "Simple integer",
-			input:       "123456",
-			expected:    123456,
-			expectError: false,
-		},
-		{
-			name:        "Zero",
-			input:       "0",
-			expected:    0,
-			expectError: false,
-		},
-		{
-			name:        "Max uint64",
-			input:       "18446744073709551615",
-			expected:    18446744073709551615,
-			expectError: false,
-		},
-
-		// Scientific notation - positive exponents
-		{
-			name:        "Simple scientific notation",
-			input:       "1e6",
-			expected:    1000000,
-			expectError: false,
-		},
-		{
-			name:        "Scientific notation with decimal",
-			input:       "1.5e+3",
-			expected:    1500,
-			expectError: false,
-		},
-		{
-			name:        "Scientific notation uppercase E",
-			input:       "5E4",
-			expected:    50000,
-			expectError: false,
-		},
-		{
-			name:        "Large scientific notation",
-			input:       "1.23e+15",
-			expected:    1230000000000000,
-			expectError: false,
-		},
-
-		// Scientific notation - negative exponents (truncated to integer)
-		{
-			name:        "Scientific notation negative exponent small",
-			input:       "1.5e-1",
-			expected:    0, // truncated to integer
-			expectError: false,
-		},
-		{
-			name:        "Scientific notation that becomes integer",
-			input:       "1.23e2",
-			expected:    123,
-			expectError: false,
-		},
-
-		// Error cases
-		{
-			name:        "Invalid format",
-			input:       "not-a-number",
-			expected:    0,
-			expectError: true,
-		},
-		{
-			name:        "Empty string",
-			input:       "",
-			expected:    0,
-			expectError: true,
-		},
-		{
-			name:        "Negative number",
-			input:       "-123",
-			expected:    0,
-			expectError: true,
-		},
-		{
-			name:        "Value too large for uint64",
-			input:       "1e100",
-			expected:    0,
-			expectError: true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result, err := parseScientificNotationToUint64(tt.input)
-
-			if tt.expectError {
-				require.Error(t, err)
-			} else {
-				require.NoError(t, err)
-				require.Equal(t, tt.expected, result)
-			}
+			expected.SetString(tt.expectedAmount, 10)
+			require.Equal(t, expected, concrete.Amount)
 		})
 	}
 }
 
-func TestParseScientificNotationToUint8(t *testing.T) {
-	tests := []struct {
-		name        string
-		input       string
-		expected    uint8
-		expectError bool
-	}{
-		// Regular decimal numbers
-		{
-			name:        "Simple integer",
-			input:       "123",
-			expected:    123,
-			expectError: false,
-		},
-		{
-			name:        "Zero",
-			input:       "0",
-			expected:    0,
-			expectError: false,
-		},
-		{
-			name:        "Max uint8",
-			input:       "255",
-			expected:    255,
-			expectError: false,
-		},
-
-		// Scientific notation - positive exponents
-		{
-			name:        "Simple scientific notation",
-			input:       "1e2",
-			expected:    100,
-			expectError: false,
-		},
-		{
-			name:        "Scientific notation with decimal",
-			input:       "2.5e+1",
-			expected:    25,
-			expectError: false,
-		},
-		{
-			name:        "Scientific notation uppercase E",
-			input:       "1E1",
-			expected:    10,
-			expectError: false,
-		},
-
-		// Scientific notation - negative exponents (truncated to integer)
-		{
-			name:        "Scientific notation negative exponent small",
-			input:       "1.5e-1",
-			expected:    0, // truncated to integer
-			expectError: false,
-		},
-		{
-			name:        "Scientific notation that becomes integer",
-			input:       "1.23e1",
-			expected:    12, // truncated
-			expectError: false,
-		},
-
-		// Error cases
-		{
-			name:        "Invalid format",
-			input:       "not-a-number",
-			expected:    0,
-			expectError: true,
-		},
-		{
-			name:        "Empty string",
-			input:       "",
-			expected:    0,
-			expectError: true,
-		},
-		{
-			name:        "Negative number",
-			input:       "-1",
-			expected:    0,
-			expectError: true,
-		},
-		{
-			name:        "Value too large for uint8",
-			input:       "256",
-			expected:    0,
-			expectError: true,
-		},
-		{
-			name:        "Scientific notation too large",
-			input:       "1e3",
-			expected:    0,
-			expectError: true,
-		},
+func TestDecodeFromEvent_UnsupportedEvent(t *testing.T) {
+	data := map[string]interface{}{
+		"some_field": "some_value",
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result, err := parseScientificNotationToUint8(tt.input)
+	payload := buildWatcherEventPayload("SomeUnknownEvent", data)
+	event := buildEvent(t, payload)
 
-			if tt.expectError {
+	_, err := v1.DecodeFromEvent(context.Background(), event)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "unsupported event type")
+}
+
+func TestDecodeFromEvent_InvalidPayload(t *testing.T) {
+	// Create an event with an invalid payload type
+	var event apiClient.Event
+	// Set an invalid/empty payload
+	event.Payload = apiClient.Event_Payload{}
+
+	_, err := v1.DecodeFromEvent(context.Background(), event)
 				require.Error(t, err)
-			} else {
-				require.NoError(t, err)
-				require.Equal(t, tt.expected, result)
-			}
-		})
+}
+
+func TestDecodeFromEvent_RedemptionRequested(t *testing.T) {
+	data := map[string]interface{}{
+		"fund_token_id":    common.HexToHash("0x02").Hex(),
+		"distributor_addr": common.HexToAddress("0x00000000000000000000000000000000000000bb").Hex(),
+		"request_id":       common.HexToHash("0x04").Hex(),
+		"shares":           "3.14159e+20",
+		"created_at":       "54321",
 	}
+
+	payload := buildWatcherEventPayload(v1.EventRedemptionRequested.String(), data)
+	event := buildEvent(t, payload)
+
+	result, err := v1.DecodeFromEvent(context.Background(), event)
+	require.NoError(t, err)
+
+	require.Equal(t, v1.EventRedemptionRequested, result.EventName())
+
+	concrete, ok := result.ConcreteEvent.(*v1.RedemptionRequested)
+	require.True(t, ok, "expected *RedemptionRequested, got %T", result.ConcreteEvent)
+
+	expectedShares := new(big.Int)
+	expectedShares.SetString("314159000000000000000", 10)
+	require.Equal(t, expectedShares, concrete.Shares)
+}
+
+func TestDecodeFromEvent_VerifiableEventFields(t *testing.T) {
+	data := map[string]interface{}{
+		"distributor_addr": "0x00000000000000000000000000000000000000cc",
+	}
+
+	payload := buildWatcherEventPayload(v1.EventDistributorRegistered.String(), data)
+	event := buildEvent(t, payload)
+
+	result, err := v1.DecodeFromEvent(context.Background(), event)
+				require.NoError(t, err)
+
+	// Verify metadata fields are populated correctly
+	require.Equal(t, "1", result.Metadata.ChainSelector)
+	require.Equal(t, payload.Address, result.Event.Address)
+	require.Equal(t, payload.Event.EventName, result.Event.Name)
+	require.Equal(t, payload.Event.TopicHash, result.Event.TopicHash)
+	require.Equal(t, payload.Transaction.Hash, result.Transaction.Hash)
+	require.Equal(t, payload.Event.Timestamp, result.CreatedAt)
+}
+
+// TestEventPayloadRoundTrip verifies that event payloads can be marshalled and unmarshalled
+func TestEventPayloadRoundTrip(t *testing.T) {
+	data := map[string]interface{}{
+		"distributor_addr": "0x00000000000000000000000000000000000000aa",
+	}
+
+	originalPayload := buildWatcherEventPayload(v1.EventDistributorRegistered.String(), data)
+
+	// Marshal to JSON
+	jsonBytes, err := json.Marshal(originalPayload)
+	require.NoError(t, err)
+
+	// Unmarshal back
+	var decodedPayload apiClient.WatcherEventPayload
+	err = json.Unmarshal(jsonBytes, &decodedPayload)
+	require.NoError(t, err)
+
+	require.Equal(t, originalPayload.Event.EventName, decodedPayload.Event.EventName)
+	require.Equal(t, originalPayload.Address, decodedPayload.Address)
 }

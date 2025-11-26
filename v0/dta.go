@@ -13,11 +13,11 @@ package v0
 
 import (
 	"fmt"
+	"log/slog"
 	"math/big"
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/rs/zerolog"
 
 	apiClient "github.com/smartcontractkit/crec-api-go/client"
 	"github.com/smartcontractkit/crec-api-go/services/dta/gen/dtaopenmarketplace"
@@ -39,7 +39,7 @@ const (
 // Options defines the configuration for creating a new CREC DTA v0 extension.
 type Options struct {
 	// Logger is an optional logger instance. If nil, a default nop logger is used.
-	Logger *zerolog.Logger
+	Logger *slog.Logger
 
 	// DTAOpenMarketplaceAddress is the address of the DTAOpenMarketplace contract.
 	DTAOpenMarketplaceAddress string
@@ -53,7 +53,7 @@ type Options struct {
 
 // Extension provides methods for preparing DTA v0 operations.
 type Extension struct {
-	logger                    *zerolog.Logger
+	logger                    *slog.Logger
 	dtaOpenMarketplaceAddress common.Address
 	dtaWalletAddress          common.Address
 	accountAddress            common.Address
@@ -66,15 +66,12 @@ func New(opts *Options) (*Extension, error) {
 		return nil, fmt.Errorf("options is required")
 	}
 
-	var logger *zerolog.Logger
-	if opts.Logger != nil {
-		logger = opts.Logger
-	} else {
-		nopLogger := zerolog.Nop()
-		logger = &nopLogger
+	logger := opts.Logger
+	if logger == nil {
+		logger = slog.Default()
 	}
 
-	logger.Info().Msg("Creating CREC DTA v0 extension")
+	logger.Info("Creating CREC DTA v0 extension")
 
 	return &Extension{
 		logger:                    logger,
@@ -120,13 +117,13 @@ func (e *Extension) PrepareRequestSubscriptionOperation(
 ) (*transactTypes.Operation, error) {
 	abiEncoder, err := dtaopenmarketplace.DtaopenmarketplaceMetaData.GetAbi()
 	if err != nil {
-		e.logger.Error().Err(err).Msg("Failed to get DTAOpenMarketplace ABI")
+		e.logger.Error("Failed to get DTAOpenMarketplace ABI", "error", err)
 		return nil, err
 	}
 
 	calldata, err := abiEncoder.Pack("requestSubscription", fundAdminAddr, fundTokenId, amount)
 	if err != nil {
-		e.logger.Error().Err(err).Msg("Failed to pack calldata for requestSubscription")
+		e.logger.Error("Failed to pack calldata for requestSubscription", "error", err)
 		return nil, err
 	}
 
@@ -151,13 +148,13 @@ func (e *Extension) PrepareRequestRedemptionOperation(
 ) (*transactTypes.Operation, error) {
 	abiEncoder, err := dtaopenmarketplace.DtaopenmarketplaceMetaData.GetAbi()
 	if err != nil {
-		e.logger.Error().Err(err).Msg("Failed to get DTAOpenMarketplace ABI")
+		e.logger.Error("Failed to get DTAOpenMarketplace ABI", "error", err)
 		return nil, err
 	}
 
 	calldata, err := abiEncoder.Pack("requestRedemption", fundAdminAddr, fundTokenId, shares)
 	if err != nil {
-		e.logger.Error().Err(err).Msg("Failed to pack calldata for requestRedemption")
+		e.logger.Error("Failed to pack calldata for requestRedemption", "error", err)
 		return nil, err
 	}
 
@@ -183,19 +180,19 @@ func (e *Extension) PrepareRequestSubscriptionWithTokenApprovalOperation(
 ) (*transactTypes.Operation, error) {
 	approveTransaction, err := e.prepareTokenApproveTransaction(&paymentTokenAddress, amount)
 	if err != nil {
-		e.logger.Error().Err(err).Msg("Failed to prepare token approve transaction")
+		e.logger.Error("Failed to prepare token approve transaction", "error", err)
 		return nil, err
 	}
 
 	abiEncoder, err := dtaopenmarketplace.DtaopenmarketplaceMetaData.GetAbi()
 	if err != nil {
-		e.logger.Error().Err(err).Msg("Failed to get DTAOpenMarketplace ABI")
+		e.logger.Error("Failed to get DTAOpenMarketplace ABI", "error", err)
 		return nil, err
 	}
 
 	calldata, err := abiEncoder.Pack("requestSubscription", fundAdminAddr, fundTokenId, amount)
 	if err != nil {
-		e.logger.Error().Err(err).Msg("Failed to pack calldata for requestSubscription")
+		e.logger.Error("Failed to pack calldata for requestSubscription", "error", err)
 		return nil, err
 	}
 
@@ -217,13 +214,13 @@ func (e *Extension) PrepareRequestSubscriptionWithTokenApprovalOperation(
 func (e *Extension) PrepareProcessDistributorRequestOperation(requestId [32]byte) (*transactTypes.Operation, error) {
 	abiEncoder, err := dtaopenmarketplace.DtaopenmarketplaceMetaData.GetAbi()
 	if err != nil {
-		e.logger.Error().Err(err).Msg("Failed to get DTAOpenMarketplace ABI")
+		e.logger.Error("Failed to get DTAOpenMarketplace ABI", "error", err)
 		return nil, err
 	}
 
 	calldata, err := abiEncoder.Pack("processDistributorRequest", requestId)
 	if err != nil {
-		e.logger.Error().Err(err).Msg("Failed to pack calldata for processDistributorRequest")
+		e.logger.Error("Failed to pack calldata for processDistributorRequest", "error", err)
 		return nil, err
 	}
 
@@ -244,13 +241,13 @@ func (e *Extension) PrepareProcessDistributorRequestOperation(requestId [32]byte
 func (e *Extension) PrepareCancelDistributorRequestOperation(requestId [32]byte) (*transactTypes.Operation, error) {
 	abiEncoder, err := dtaopenmarketplace.DtaopenmarketplaceMetaData.GetAbi()
 	if err != nil {
-		e.logger.Error().Err(err).Msg("Failed to get DTAOpenMarketplace ABI")
+		e.logger.Error("Failed to get DTAOpenMarketplace ABI", "error", err)
 		return nil, err
 	}
 
 	calldata, err := abiEncoder.Pack("cancelDistributorRequest", requestId)
 	if err != nil {
-		e.logger.Error().Err(err).Msg("Failed to pack calldata for cancelDistributorRequest")
+		e.logger.Error("Failed to pack calldata for cancelDistributorRequest", "error", err)
 		return nil, err
 	}
 
@@ -274,13 +271,13 @@ func (e *Extension) PrepareRegisterDistributorOperation(
 ) (*transactTypes.Operation, error) {
 	abiEncoder, err := dtaopenmarketplace.DtaopenmarketplaceMetaData.GetAbi()
 	if err != nil {
-		e.logger.Error().Err(err).Msg("Failed to get DTAOpenMarketplace ABI")
+		e.logger.Error("Failed to get DTAOpenMarketplace ABI", "error", err)
 		return nil, err
 	}
 
 	calldata, err := abiEncoder.Pack("registerDistributor", distributorAddr, distributorWalletAddr)
 	if err != nil {
-		e.logger.Error().Err(err).Msg("Failed to pack calldata for registerDistributor")
+		e.logger.Error("Failed to pack calldata for registerDistributor", "error", err)
 		return nil, err
 	}
 
@@ -303,13 +300,13 @@ func (e *Extension) PrepareUpdateDistributorOperation(
 ) (*transactTypes.Operation, error) {
 	abiEncoder, err := dtaopenmarketplace.DtaopenmarketplaceMetaData.GetAbi()
 	if err != nil {
-		e.logger.Error().Err(err).Msg("Failed to get DTAOpenMarketplace ABI")
+		e.logger.Error("Failed to get DTAOpenMarketplace ABI", "error", err)
 		return nil, err
 	}
 
 	calldata, err := abiEncoder.Pack("updateDistributor", distributorWalletAddr)
 	if err != nil {
-		e.logger.Error().Err(err).Msg("Failed to pack calldata for updateDistributor")
+		e.logger.Error("Failed to pack calldata for updateDistributor", "error", err)
 		return nil, err
 	}
 
@@ -330,13 +327,13 @@ func (e *Extension) PrepareUpdateDistributorOperation(
 func (e *Extension) PrepareRegisterFundAdminOperation(fundAdminAddr common.Address) (*transactTypes.Operation, error) {
 	abiEncoder, err := dtaopenmarketplace.DtaopenmarketplaceMetaData.GetAbi()
 	if err != nil {
-		e.logger.Error().Err(err).Msg("Failed to get DTAOpenMarketplace ABI")
+		e.logger.Error("Failed to get DTAOpenMarketplace ABI", "error", err)
 		return nil, err
 	}
 
 	calldata, err := abiEncoder.Pack("registerFundAdmin", fundAdminAddr)
 	if err != nil {
-		e.logger.Error().Err(err).Msg("Failed to pack calldata for registerFundAdmin")
+		e.logger.Error("Failed to pack calldata for registerFundAdmin", "error", err)
 		return nil, err
 	}
 
@@ -360,7 +357,7 @@ func (e *Extension) PrepareRegisterFundTokenOperation(
 ) (*transactTypes.Operation, error) {
 	abiEncoder, err := dtaopenmarketplace.DtaopenmarketplaceMetaData.GetAbi()
 	if err != nil {
-		e.logger.Error().Err(err).Msg("Failed to get DTAOpenMarketplace ABI")
+		e.logger.Error("Failed to get DTAOpenMarketplace ABI", "error", err)
 		return nil, err
 	}
 
@@ -408,7 +405,7 @@ func (e *Extension) PrepareRegisterFundTokenOperation(
 
 	calldata, err := abiEncoder.Pack("registerFundToken", fundTokenId, contractTokenData)
 	if err != nil {
-		e.logger.Error().Err(err).Msg("Failed to pack calldata for registerFundToken")
+		e.logger.Error("Failed to pack calldata for registerFundToken", "error", err)
 		return nil, err
 	}
 
@@ -432,13 +429,13 @@ func (e *Extension) PrepareAllowDistributorForTokenOperation(
 ) (*transactTypes.Operation, error) {
 	abiEncoder, err := dtaopenmarketplace.DtaopenmarketplaceMetaData.GetAbi()
 	if err != nil {
-		e.logger.Error().Err(err).Msg("Failed to get DTAOpenMarketplace ABI")
+		e.logger.Error("Failed to get DTAOpenMarketplace ABI", "error", err)
 		return nil, err
 	}
 
 	calldata, err := abiEncoder.Pack("allowDistributorForToken", fundTokenId, distributorAddr)
 	if err != nil {
-		e.logger.Error().Err(err).Msg("Failed to pack calldata for allowDistributorForToken")
+		e.logger.Error("Failed to pack calldata for allowDistributorForToken", "error", err)
 		return nil, err
 	}
 
@@ -462,13 +459,13 @@ func (e *Extension) PrepareDisallowDistributorForTokenOperation(
 ) (*transactTypes.Operation, error) {
 	abiEncoder, err := dtaopenmarketplace.DtaopenmarketplaceMetaData.GetAbi()
 	if err != nil {
-		e.logger.Error().Err(err).Msg("Failed to get DTAOpenMarketplace ABI")
+		e.logger.Error("Failed to get DTAOpenMarketplace ABI", "error", err)
 		return nil, err
 	}
 
 	calldata, err := abiEncoder.Pack("disallowDistributorForToken", fundTokenId, distributorAddr)
 	if err != nil {
-		e.logger.Error().Err(err).Msg("Failed to pack calldata for disallowDistributorForToken")
+		e.logger.Error("Failed to pack calldata for disallowDistributorForToken", "error", err)
 		return nil, err
 	}
 
@@ -489,13 +486,13 @@ func (e *Extension) PrepareDisallowDistributorForTokenOperation(
 func (e *Extension) PrepareEnableFundTokenOperation(fundTokenId [32]byte) (*transactTypes.Operation, error) {
 	abiEncoder, err := dtaopenmarketplace.DtaopenmarketplaceMetaData.GetAbi()
 	if err != nil {
-		e.logger.Error().Err(err).Msg("Failed to get DTAOpenMarketplace ABI")
+		e.logger.Error("Failed to get DTAOpenMarketplace ABI", "error", err)
 		return nil, err
 	}
 
 	calldata, err := abiEncoder.Pack("enableFundToken", fundTokenId)
 	if err != nil {
-		e.logger.Error().Err(err).Msg("Failed to pack calldata for enableFundToken")
+		e.logger.Error("Failed to pack calldata for enableFundToken", "error", err)
 		return nil, err
 	}
 
@@ -516,13 +513,13 @@ func (e *Extension) PrepareEnableFundTokenOperation(fundTokenId [32]byte) (*tran
 func (e *Extension) PrepareDisableFundTokenOperation(fundTokenId [32]byte) (*transactTypes.Operation, error) {
 	abiEncoder, err := dtaopenmarketplace.DtaopenmarketplaceMetaData.GetAbi()
 	if err != nil {
-		e.logger.Error().Err(err).Msg("Failed to get DTAOpenMarketplace ABI")
+		e.logger.Error("Failed to get DTAOpenMarketplace ABI", "error", err)
 		return nil, err
 	}
 
 	calldata, err := abiEncoder.Pack("disableFundToken", fundTokenId)
 	if err != nil {
-		e.logger.Error().Err(err).Msg("Failed to pack calldata for disableFundToken")
+		e.logger.Error("Failed to pack calldata for disableFundToken", "error", err)
 		return nil, err
 	}
 
@@ -553,13 +550,13 @@ func (e *Extension) PrepareAllowDTAOperation(
 ) (*transactTypes.Operation, error) {
 	abiEncoder, err := dtawallet.DtawalletMetaData.GetAbi()
 	if err != nil {
-		e.logger.Error().Err(err).Msg("Failed to get DTAWallet ABI")
+		e.logger.Error("Failed to get DTAWallet ABI", "error", err)
 		return nil, err
 	}
 
 	calldata, err := abiEncoder.Pack("allowDTA", dtaAddr, dtaChainSelector, fundTokenId, fundTokenAddr, uint8(burnType))
 	if err != nil {
-		e.logger.Error().Err(err).Msg("Failed to pack calldata for allowDTA")
+		e.logger.Error("Failed to pack calldata for allowDTA", "error", err)
 		return nil, err
 	}
 
@@ -584,13 +581,13 @@ func (e *Extension) PrepareDisallowDTAOperation(
 ) (*transactTypes.Operation, error) {
 	abiEncoder, err := dtawallet.DtawalletMetaData.GetAbi()
 	if err != nil {
-		e.logger.Error().Err(err).Msg("Failed to get DTAWallet ABI")
+		e.logger.Error("Failed to get DTAWallet ABI", "error", err)
 		return nil, err
 	}
 
 	calldata, err := abiEncoder.Pack("disallowDTA", dtaAddr, dtaChainSelector, fundTokenId)
 	if err != nil {
-		e.logger.Error().Err(err).Msg("Failed to pack calldata for disallowDTA")
+		e.logger.Error("Failed to pack calldata for disallowDTA", "error", err)
 		return nil, err
 	}
 
@@ -615,13 +612,13 @@ func (e *Extension) PrepareWithdrawTokensOperation(
 ) (*transactTypes.Operation, error) {
 	abiEncoder, err := dtawallet.DtawalletMetaData.GetAbi()
 	if err != nil {
-		e.logger.Error().Err(err).Msg("Failed to get DTAWallet ABI")
+		e.logger.Error("Failed to get DTAWallet ABI", "error", err)
 		return nil, err
 	}
 
 	calldata, err := abiEncoder.Pack("withdrawTokens", token, recipient, amount)
 	if err != nil {
-		e.logger.Error().Err(err).Msg("Failed to pack calldata for withdrawTokens")
+		e.logger.Error("Failed to pack calldata for withdrawTokens", "error", err)
 		return nil, err
 	}
 
@@ -642,13 +639,13 @@ func (e *Extension) PrepareWithdrawTokensOperation(
 func (e *Extension) PrepareTransferWalletOwnershipOperation(newOwner common.Address) (*transactTypes.Operation, error) {
 	abiEncoder, err := dtawallet.DtawalletMetaData.GetAbi()
 	if err != nil {
-		e.logger.Error().Err(err).Msg("Failed to get DTAWallet ABI")
+		e.logger.Error("Failed to get DTAWallet ABI", "error", err)
 		return nil, err
 	}
 
 	calldata, err := abiEncoder.Pack("transferOwnership", newOwner)
 	if err != nil {
-		e.logger.Error().Err(err).Msg("Failed to pack calldata for transferOwnership")
+		e.logger.Error("Failed to pack calldata for transferOwnership", "error", err)
 		return nil, err
 	}
 
@@ -669,13 +666,13 @@ func (e *Extension) PrepareTransferWalletOwnershipOperation(newOwner common.Addr
 func (e *Extension) PrepareRenounceWalletOwnershipOperation() (*transactTypes.Operation, error) {
 	abiEncoder, err := dtawallet.DtawalletMetaData.GetAbi()
 	if err != nil {
-		e.logger.Error().Err(err).Msg("Failed to get DTAWallet ABI")
+		e.logger.Error("Failed to get DTAWallet ABI", "error", err)
 		return nil, err
 	}
 
 	calldata, err := abiEncoder.Pack("renounceOwnership")
 	if err != nil {
-		e.logger.Error().Err(err).Msg("Failed to pack calldata for renounceOwnership")
+		e.logger.Error("Failed to pack calldata for renounceOwnership", "error", err)
 		return nil, err
 	}
 
@@ -700,13 +697,13 @@ func (e *Extension) PrepareCompleteRequestProcessingOperation(
 ) (*transactTypes.Operation, error) {
 	abiEncoder, err := dtawallet.DtawalletMetaData.GetAbi()
 	if err != nil {
-		e.logger.Error().Err(err).Msg("Failed to get DTAWallet ABI")
+		e.logger.Error("Failed to get DTAWallet ABI", "error", err)
 		return nil, err
 	}
 
 	calldata, err := abiEncoder.Pack("completeRequestProcessing", requestId, success, errorData)
 	if err != nil {
-		e.logger.Error().Err(err).Msg("Failed to pack calldata for completeRequestProcessing")
+		e.logger.Error("Failed to pack calldata for completeRequestProcessing", "error", err)
 		return nil, err
 	}
 
@@ -742,13 +739,13 @@ func (e *Extension) prepareTokenApproveTransaction(
 ) (*transactTypes.Transaction, error) {
 	erc20Abi, err := erc20.Erc20MetaData.GetAbi()
 	if err != nil {
-		e.logger.Error().Err(err).Msg("failed to get ERC20 ABI")
+		e.logger.Error("failed to get ERC20 ABI", "error", err)
 		return nil, err
 	}
 
 	calldata, err := erc20Abi.Pack("approve", e.dtaOpenMarketplaceAddress, tokenAmount)
 	if err != nil {
-		e.logger.Error().Err(err).Msg("failed to pack calldata for token approve")
+		e.logger.Error("failed to pack calldata for token approve", "error", err)
 		return nil, err
 	}
 

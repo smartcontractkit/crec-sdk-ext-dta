@@ -5,107 +5,51 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"math/big"
 	"strconv"
-	"strings"
-	"time"
 
 	"github.com/ethereum/go-ethereum/common"
+	apiClient "github.com/smartcontractkit/crec-api-go/client"
+	"github.com/smartcontractkit/crec-sdk-ext-dta/parsing"
+	"github.com/smartcontractkit/crec-sdk-ext-dta/types"
 )
 
-// ConcreteEvent represents any decoded concrete event payload.
-type ConcreteEvent interface{}
+// Type aliases for shared types
+type (
+	ConcreteEvent = types.ConcreteEvent
+	Event         = types.Event
+	Metadata      = types.Metadata
+	WorkflowEvent = types.WorkflowEvent
+	Transaction   = types.Transaction
+	Attribute     = types.Attribute
+	Attrs         = types.Attrs
+)
 
-// VerifiableEvent represents an event structure that encapsulates data about the event, its metadata, and associated blockchain transaction details.
+// VerifiableEvent wraps the shared VerifiableEvent type to add version-specific methods.
 type VerifiableEvent struct {
-	CreatedAt   time.Time         `json:"created_at"`
-	Event       Event             `json:"event"`
-	Metadata    Metadata          `json:"metadata"`
-	Parameters  map[string]string `json:"parameters"`
-	Transaction Transaction       `json:"transaction"`
-
-	// ConcreteEvent holds the decoded concrete event based on the event name and using the fields in `VerifiableEvent.Metadata.WorkflowEvent.Attributes`
-	ConcreteEvent ConcreteEvent `json:"-"`
+	types.VerifiableEvent
 }
 
-type Event struct {
-	Name        string            `json:"name"`
-	Address     string            `json:"address"`
-	Service     string            `json:"service"`
-	LogIndex    int               `json:"log_index"`
-	Parameters  map[string]string `json:"parameters"`
-	TopicHash   string            `json:"topic_hash"`
-	BlockNumber int               `json:"block_number"`
-}
-type Metadata struct {
-	ChainId       string        `json:"chainId"`
-	Network       string        `json:"network"`
-	WorkflowEvent WorkflowEvent `json:"workflowEvent"`
-}
-type WorkflowEvent struct {
-	Component      string   `json:"component"`
-	Attributes     Attrs    `json:"attributes"`
-	ProcessLabels  []string `json:"process_labels"`
-	EventTypeLabel string   `json:"event_type_label"`
-}
-type Transaction struct {
-	Hash        string `json:"hash"`
-	ChainId     string `json:"chain_id"`
-	Timestamp   int    `json:"timestamp"`
-	BlockNumber int    `json:"block_number"`
+// EventName determines and returns the event name from the workflow attributes or outer event name;
+// defaults to EventUnknown if not resolvable.
+func (v VerifiableEvent) EventName() EventName {
+	return types.GetEventName(v.VerifiableEvent, EventUnknown, parseEvent)
 }
 
-type Attribute struct {
-	Key        string `json:"key"`
-	OnChain    bool   `json:"on_chain"`
-	Value      string `json:"value"`
-	Visibility string `json:"visibility"`
-}
-
-type Attrs map[string]Attribute
-
-// Has checks if the specified key exists in the Attrs map. Returns true if the key is present; otherwise, false.
-func (a Attrs) Has(key string) bool {
-	_, ok := a[key]
-	return ok
-}
-
-// Get retrieves the value and existence status of the specified key from the Attrs map. Returns the value and true if key exists, otherwise an empty string and false.
-func (a Attrs) Get(key string) (string, bool) {
-	v, ok := a[key]
-	return v.Value, ok
-}
-
-// Require retrieves the value of the specified key from the Attrs map. Returns an error if the key is missing or its value is empty.
-func (a Attrs) Require(key string) (string, error) {
-	if v, ok := a.Get(key); ok && v != "" {
-		return v, nil
-	}
-	return "", fmt.Errorf("missing required attribute %q", key)
-}
-
-// Default returns the value associated with the specified key if it exists and is non-empty; otherwise, it returns the provided default value.
-func (a Attrs) Default(key, def string) string {
-	if v, ok := a.Get(key); ok && v != "" {
-		return v
-	}
-	return def
-}
-
-// UnmarshalJSON implements custom decoding to populate the concrete event
-// from the attribute map. It determines the event name using the "event_type" attribute
-// (or falls back to the outer Event.Name), then maps attributes into the struct fields.
-func (v *VerifiableEvent) UnmarshalJSON(b []byte) error {
+// unmarshalVerifiableEvent implements version-specific unmarshaling to populate ConcreteEvent.
+func unmarshalVerifiableEvent(data []byte, v *types.VerifiableEvent) error {
 	// Use an alias to avoid infinite recursion
-	type alias VerifiableEvent
+	type alias types.VerifiableEvent
 	var a alias
-	if err := json.Unmarshal(b, &a); err != nil {
+	if err := json.Unmarshal(data, &a); err != nil {
 		return fmt.Errorf("failed to unmarshal VerifiableEvent envelope: %w", err)
 	}
 
 	// Copy envelope to receiver
-	*v = VerifiableEvent(a)
-	name := v.EventName()
+	*v = types.VerifiableEvent(a)
+
+	// Wrap to get EventName method
+	wrapped := VerifiableEvent{VerifiableEvent: *v}
+	name := wrapped.EventName()
 
 	// Create the concrete event instance
 	var concrete ConcreteEvent
@@ -121,11 +65,11 @@ func (v *VerifiableEvent) UnmarshalJSON(b []byte) error {
 			RequestId:       common.HexToHash(v.Event.Parameters["request_id"]),
 		}
 	case EventDistributorRequestProcessed:
-		shares, ok := parseScientificNotationToBigInt(v.Event.Parameters["shares"])
+		shares, ok := parsing.ScientificNotationToBigInt(v.Event.Parameters["shares"])
 		if !ok {
 			return fmt.Errorf("event %s unable to parse shares: %s", name, v.Event.Parameters["shares"])
 		}
-		status, err := parseScientificNotationToUint8(v.Event.Parameters["status"])
+		status, err := parsing.ScientificNotationToUint8(v.Event.Parameters["status"])
 		if err != nil {
 			return fmt.Errorf("event %s unable to parse status: %s", name, v.Event.Parameters["status"])
 		}
@@ -136,11 +80,11 @@ func (v *VerifiableEvent) UnmarshalJSON(b []byte) error {
 			Error:     []byte(v.Event.Parameters["error"]),
 		}
 	case EventDistributorRequestProcessing:
-		shares, ok := parseScientificNotationToBigInt(v.Event.Parameters["shares"])
+		shares, ok := parsing.ScientificNotationToBigInt(v.Event.Parameters["shares"])
 		if !ok {
 			return fmt.Errorf("event %s unable to parse shares: %s", name, v.Event.Parameters["shares"])
 		}
-		amount, ok := parseScientificNotationToBigInt(v.Event.Parameters["amount"])
+		amount, ok := parsing.ScientificNotationToBigInt(v.Event.Parameters["amount"])
 		if !ok {
 			return fmt.Errorf("event %s unable to parse amount: %s", name, v.Event.Parameters["amount"])
 		}
@@ -167,7 +111,7 @@ func (v *VerifiableEvent) UnmarshalJSON(b []byte) error {
 			Allowed:         allowed,
 		}
 	case EventFundTokenRegistered:
-		tokenChainSelector, err := parseScientificNotationToUint64(v.Event.Parameters["token_chain_selector"])
+		tokenChainSelector, err := parsing.ScientificNotationToUint64(v.Event.Parameters["token_chain_selector"])
 		if err != nil {
 			return fmt.Errorf("event %s unable to parse token_chain_selector: %s", name, v.Event.Parameters["token_chain_selector"])
 		}
@@ -179,13 +123,13 @@ func (v *VerifiableEvent) UnmarshalJSON(b []byte) error {
 			TokenChainSelector: tokenChainSelector,
 		}
 	case EventInitialized:
-		version, err := parseScientificNotationToUint64(v.Event.Parameters["version"])
+		version, err := parsing.ScientificNotationToUint64(v.Event.Parameters["version"])
 		if err != nil {
 			return fmt.Errorf("event %s unable to parse version: %s", name, v.Event.Parameters["version"])
 		}
 		concrete = &Initialized{Version: version}
 	case EventInvalidDTARequestSettlement:
-		actualChainSelector, err := parseScientificNotationToUint64(v.Event.Parameters["actual_chain_selector"])
+		actualChainSelector, err := parsing.ScientificNotationToUint64(v.Event.Parameters["actual_chain_selector"])
 		if err != nil {
 			return fmt.Errorf("event %s unable to parse actual_chain_selector: %s", name, v.Event.Parameters["actual_chain_selector"])
 		}
@@ -202,7 +146,7 @@ func (v *VerifiableEvent) UnmarshalJSON(b []byte) error {
 			Reason:    []byte(v.Event.Parameters["reason"]),
 		}
 	case EventNativeFundsRecovered:
-		amount, ok := parseScientificNotationToBigInt(v.Event.Parameters["amount"])
+		amount, ok := parsing.ScientificNotationToBigInt(v.Event.Parameters["amount"])
 		if !ok {
 			return fmt.Errorf("event %s unable to parse amount: %s", name, v.Event.Parameters["amount"])
 		}
@@ -216,11 +160,11 @@ func (v *VerifiableEvent) UnmarshalJSON(b []byte) error {
 			NewOwner:      common.HexToAddress(v.Event.Parameters["new_owner"]),
 		}
 	case EventRedemptionRequested:
-		shares, ok := parseScientificNotationToBigInt(v.Event.Parameters["shares"])
+		shares, ok := parsing.ScientificNotationToBigInt(v.Event.Parameters["shares"])
 		if !ok {
 			return fmt.Errorf("event %s unable to parse shares: %s", name, v.Event.Parameters["shares"])
 		}
-		createdAt, err := parseScientificNotationToUint64(v.Event.Parameters["created_at"])
+		createdAt, err := parsing.ScientificNotationToUint64(v.Event.Parameters["created_at"])
 		if err != nil {
 			return fmt.Errorf("event %s unable to parse created_at: %s", name, v.Event.Parameters["created_at"])
 		}
@@ -232,11 +176,11 @@ func (v *VerifiableEvent) UnmarshalJSON(b []byte) error {
 			CreatedAt:       createdAt,
 		}
 	case EventSubscriptionRequested:
-		amount, ok := parseScientificNotationToBigInt(v.Event.Parameters["amount"])
+		amount, ok := parsing.ScientificNotationToBigInt(v.Event.Parameters["amount"])
 		if !ok {
 			return fmt.Errorf("event %s unable to parse amount: %s", name, v.Event.Parameters["amount"])
 		}
-		createdAt, err := parseScientificNotationToUint64(v.Event.Parameters["created_at"])
+		createdAt, err := parsing.ScientificNotationToUint64(v.Event.Parameters["created_at"])
 		if err != nil {
 			return fmt.Errorf("event %s unable to parse created_at: %s", name, v.Event.Parameters["created_at"])
 		}
@@ -248,15 +192,15 @@ func (v *VerifiableEvent) UnmarshalJSON(b []byte) error {
 			CreatedAt:       createdAt,
 		}
 	case EventAnswerUpdated:
-		current, ok := parseScientificNotationToBigInt(v.Event.Parameters["current"])
+		current, ok := parsing.ScientificNotationToBigInt(v.Event.Parameters["current"])
 		if !ok {
 			return fmt.Errorf("event %s unable to parse current: %s", name, v.Event.Parameters["current"])
 		}
-		roundId, ok := parseScientificNotationToBigInt(v.Event.Parameters["roundId"])
+		roundId, ok := parsing.ScientificNotationToBigInt(v.Event.Parameters["roundId"])
 		if !ok {
 			return fmt.Errorf("event %s unable to parse roundId: %s", name, v.Event.Parameters["roundId"])
 		}
-		updatedAt, ok := parseScientificNotationToBigInt(v.Event.Parameters["updatedAt"])
+		updatedAt, ok := parsing.ScientificNotationToBigInt(v.Event.Parameters["updatedAt"])
 		if !ok {
 			return fmt.Errorf("event %s unable to parse updatedAt: %s", name, v.Event.Parameters["updatedAt"])
 		}
@@ -267,7 +211,7 @@ func (v *VerifiableEvent) UnmarshalJSON(b []byte) error {
 			Reason:    []byte(v.Event.Parameters["reason"]),
 		}
 	case EventDTAAdded:
-		dtaChainSelector, err := parseScientificNotationToUint64(v.Event.Parameters["dta_chain_selector"])
+		dtaChainSelector, err := parsing.ScientificNotationToUint64(v.Event.Parameters["dta_chain_selector"])
 		if err != nil {
 			return fmt.Errorf("event %s unable to parse dta_chain_selector: %s", name, v.Event.Parameters["dta_chain_selector"])
 		}
@@ -278,7 +222,7 @@ func (v *VerifiableEvent) UnmarshalJSON(b []byte) error {
 			FundTokenAddr:    common.HexToAddress(v.Event.Parameters["fund_token_addr"]),
 		}
 	case EventDTARemoved:
-		dtaChainSelector, err := parseScientificNotationToUint64(v.Event.Parameters["dta_chain_selector"])
+		dtaChainSelector, err := parsing.ScientificNotationToUint64(v.Event.Parameters["dta_chain_selector"])
 		if err != nil {
 			return fmt.Errorf("event %s unable to parse dta_chain_selector: %s", name, v.Event.Parameters["dta_chain_selector"])
 		}
@@ -288,11 +232,11 @@ func (v *VerifiableEvent) UnmarshalJSON(b []byte) error {
 			FundTokenId:      common.HexToHash(v.Event.Parameters["fund_token_id"]),
 		}
 	case EventDTASettlementClosed:
-		requestType, err := parseScientificNotationToUint8(v.Event.Parameters["request_type"])
+		requestType, err := parsing.ScientificNotationToUint8(v.Event.Parameters["request_type"])
 		if err != nil {
 			return fmt.Errorf("event %s unable to parse request_type: %s", name, v.Event.Parameters["request_type"])
 		}
-		dtaChainSelector, err := parseScientificNotationToUint64(v.Event.Parameters["dta_chain_selector"])
+		dtaChainSelector, err := parsing.ScientificNotationToUint64(v.Event.Parameters["dta_chain_selector"])
 		if err != nil {
 			return fmt.Errorf("event %s unable to parse dta_chain_selector: %s", name, v.Event.Parameters["dta_chain_selector"])
 		}
@@ -311,23 +255,23 @@ func (v *VerifiableEvent) UnmarshalJSON(b []byte) error {
 			Err:              []byte(v.Event.Parameters["err"]),
 		}
 	case EventDTASettlementOpened:
-		requestType, err := parseScientificNotationToUint8(v.Event.Parameters["request_type"])
+		requestType, err := parsing.ScientificNotationToUint8(v.Event.Parameters["request_type"])
 		if err != nil {
 			return fmt.Errorf("event %s unable to parse request_type: %s", name, v.Event.Parameters["request_type"])
 		}
-		dtaChainSelector, err := parseScientificNotationToUint64(v.Event.Parameters["dta_chain_selector"])
+		dtaChainSelector, err := parsing.ScientificNotationToUint64(v.Event.Parameters["dta_chain_selector"])
 		if err != nil {
 			return fmt.Errorf("event %s unable to parse dta_chain_selector: %s", name, v.Event.Parameters["dta_chain_selector"])
 		}
-		shares, ok := parseScientificNotationToBigInt(v.Event.Parameters["shares"])
+		shares, ok := parsing.ScientificNotationToBigInt(v.Event.Parameters["shares"])
 		if !ok {
 			return fmt.Errorf("event %s unable to parse shares: %s", name, v.Event.Parameters["shares"])
 		}
-		amount, ok := parseScientificNotationToBigInt(v.Event.Parameters["amount"])
+		amount, ok := parsing.ScientificNotationToBigInt(v.Event.Parameters["amount"])
 		if !ok {
 			return fmt.Errorf("event %s unable to parse amount: %s", name, v.Event.Parameters["amount"])
 		}
-		currency, err := parseScientificNotationToUint8(v.Event.Parameters["currency"])
+		currency, err := parsing.ScientificNotationToUint8(v.Event.Parameters["currency"])
 		if err != nil {
 			return fmt.Errorf("event %s unable to parse currency: %s", name, v.Event.Parameters["currency"])
 		}
@@ -350,7 +294,7 @@ func (v *VerifiableEvent) UnmarshalJSON(b []byte) error {
 			RequestId: common.HexToHash(v.Event.Parameters["request_id"]),
 		}
 	case EventInsufficientPaymentTokenBalance:
-		amount, ok := parseScientificNotationToBigInt(v.Event.Parameters["amount"])
+		amount, ok := parsing.ScientificNotationToBigInt(v.Event.Parameters["amount"])
 		if !ok {
 			return fmt.Errorf("event %s unable to parse amount: %s", name, v.Event.Parameters["amount"])
 		}
@@ -362,7 +306,7 @@ func (v *VerifiableEvent) UnmarshalJSON(b []byte) error {
 			Amount:                amount,
 		}
 	case EventInvalidSubscriptionCrossChainPayment:
-		ccipDestTokenAmountsLength, ok := parseScientificNotationToBigInt(v.Event.Parameters["ccip_dest_token_amounts_length"])
+		ccipDestTokenAmountsLength, ok := parsing.ScientificNotationToBigInt(v.Event.Parameters["ccip_dest_token_amounts_length"])
 		if !ok {
 			return fmt.Errorf("event %s unable to parse ccip_dest_token_amounts_length: %s", name, v.Event.Parameters["ccip_dest_token_amounts_length"])
 		}
@@ -374,11 +318,11 @@ func (v *VerifiableEvent) UnmarshalJSON(b []byte) error {
 			CCIPPaymentTokenAddr:       common.HexToAddress(v.Event.Parameters["ccip_payment_token_addr"]),
 		}
 	case EventSettlementFailed:
-		shares, ok := parseScientificNotationToBigInt(v.Event.Parameters["shares"])
+		shares, ok := parsing.ScientificNotationToBigInt(v.Event.Parameters["shares"])
 		if !ok {
 			return fmt.Errorf("event %s unable to parse shares: %s", name, v.Event.Parameters["shares"])
 		}
-		amount, ok := parseScientificNotationToBigInt(v.Event.Parameters["amount"])
+		amount, ok := parsing.ScientificNotationToBigInt(v.Event.Parameters["amount"])
 		if !ok {
 			return fmt.Errorf("event %s unable to parse amount: %s", name, v.Event.Parameters["amount"])
 		}
@@ -393,7 +337,7 @@ func (v *VerifiableEvent) UnmarshalJSON(b []byte) error {
 			ErrData:               []byte(v.Event.Parameters["err_data"]),
 		}
 	case EventTokenWithdrawn:
-		amount, ok := parseScientificNotationToBigInt(v.Event.Parameters["amount"])
+		amount, ok := parsing.ScientificNotationToBigInt(v.Event.Parameters["amount"])
 		if !ok {
 			return fmt.Errorf("event %s unable to parse amount: %s", name, v.Event.Parameters["amount"])
 		}
@@ -403,11 +347,11 @@ func (v *VerifiableEvent) UnmarshalJSON(b []byte) error {
 			Amount:    amount,
 		}
 	case EventUnauthorizedSenderDTA:
-		reqType, err := parseScientificNotationToUint8(v.Event.Parameters["req_type"])
+		reqType, err := parsing.ScientificNotationToUint8(v.Event.Parameters["req_type"])
 		if err != nil {
 			return fmt.Errorf("event %s unable to parse req_type: %s", name, v.Event.Parameters["req_type"])
 		}
-		dtaChainSelector, err := parseScientificNotationToUint64(v.Event.Parameters["dta_chain_selector"])
+		dtaChainSelector, err := parsing.ScientificNotationToUint64(v.Event.Parameters["dta_chain_selector"])
 		if err != nil {
 			return fmt.Errorf("event %s unable to parse dta_chain_selector: %s", name, v.Event.Parameters["dta_chain_selector"])
 		}
@@ -427,244 +371,13 @@ func (v *VerifiableEvent) UnmarshalJSON(b []byte) error {
 	return nil
 }
 
-// Decode parses a base64-encoded JSON string and unmarshals it into a VerifiableEvent. It returns an error if decoding or unmarshalling fails.
-func Decode(ctx context.Context, verifiableEventString string) (VerifiableEvent, error) {
-	decodedBytes, err := base64.StdEncoding.DecodeString(verifiableEventString)
+
+// DecodeFromEvent extracts the WatcherEventPayload from an apiClient.Event and converts it
+// to a VerifiableEvent with the ConcreteEvent populated based on the event type.
+func DecodeFromEvent(ctx context.Context, event apiClient.Event) (VerifiableEvent, error) {
+	ve, err := types.DecodeFromEvent(ctx, event, unmarshalVerifiableEvent)
 	if err != nil {
 		return VerifiableEvent{}, err
 	}
-
-	var verifiableEvent VerifiableEvent
-	if err = json.Unmarshal(decodedBytes, &verifiableEvent); err != nil {
-		return VerifiableEvent{}, err
-	}
-
-	return verifiableEvent, nil
-}
-
-// EventName determines and returns the event name from the workflow attributes or outer event name; defaults to EventUnknown if not resolvable.
-func (v VerifiableEvent) EventName() EventName {
-	var name EventName
-	if attr, ok := v.Metadata.WorkflowEvent.Attributes["event_type"]; ok {
-		if ev, ok := parseEvent(attr.Value); ok {
-			name = ev
-		}
-	}
-	if name == "" && v.Event.Name != "" {
-		if ev, ok := parseEvent(v.Event.Name); ok {
-			name = ev
-		}
-	}
-	if name == "" {
-		return EventUnknown
-	}
-	return name
-}
-
-// parseScientificNotationToBigInt converts scientific notation strings to big.Int
-// Handles formats like "1.2e+21", "1e18", etc. that big.Int.SetString cannot parse directly
-// Also handles decimal numbers like "600000000000000000000.000000"
-func parseScientificNotationToBigInt(value string) (*big.Int, bool) {
-	// First try direct parsing in case it's already a regular integer
-	if result, ok := new(big.Int).SetString(value, 10); ok {
-		return result, true
-	}
-
-	// Handle scientific notation
-	lowerValue := strings.ToLower(value)
-	if strings.Contains(lowerValue, "e") {
-		// Split on 'e' to get mantissa and exponent
-		parts := strings.Split(lowerValue, "e")
-		if len(parts) != 2 {
-			return nil, false
-		}
-
-		mantissaStr := parts[0]
-		exponentStr := parts[1]
-
-		// Remove optional '+' from exponent
-		exponentStr = strings.TrimPrefix(exponentStr, "+")
-
-		// Parse exponent as integer
-		exponent, err := strconv.Atoi(exponentStr)
-		if err != nil {
-			return nil, false
-		}
-
-		// Handle negative exponents (fractional results truncated to integer)
-		if exponent < 0 {
-			// For negative exponents, we need to check if the result would be < 1
-			// If so, truncate to 0 (integer part)
-			mantissaFloat, err := strconv.ParseFloat(mantissaStr, 64)
-			if err != nil {
-				return nil, false
-			}
-
-			// Calculate the actual value to see if it's < 1
-			actualValue := mantissaFloat * pow10(exponent)
-			if actualValue < 1.0 {
-				return big.NewInt(0), true
-			}
-
-			// If >= 1, we need to handle it properly
-			// Convert to string without scientific notation and truncate decimal part
-			decimalStr := fmt.Sprintf("%.0f", actualValue)
-			if result, ok := new(big.Int).SetString(decimalStr, 10); ok {
-				return result, true
-			}
-			return nil, false
-		}
-
-		// For positive exponents, handle manually to avoid precision loss
-		var mantissaBig *big.Int
-
-		// Check if mantissa has decimal point
-		if strings.Contains(mantissaStr, ".") {
-			// Split mantissa into integer and fractional parts
-			decimalParts := strings.Split(mantissaStr, ".")
-			if len(decimalParts) != 2 {
-				return nil, false
-			}
-
-			integerPart := decimalParts[0]
-			fractionalPart := decimalParts[1]
-
-			// Combine integer and fractional parts
-			combinedStr := integerPart + fractionalPart
-
-			// Parse as big integer
-			var ok bool
-			mantissaBig, ok = new(big.Int).SetString(combinedStr, 10)
-			if !ok {
-				return nil, false
-			}
-
-			// Adjust exponent to account for the fractional digits
-			exponent -= len(fractionalPart)
-		} else {
-			// No decimal point, parse directly
-			var ok bool
-			mantissaBig, ok = new(big.Int).SetString(mantissaStr, 10)
-			if !ok {
-				return nil, false
-			}
-		}
-
-		// Multiply by 10^exponent
-		if exponent > 0 {
-			// Multiply by 10^exponent
-			multiplier := new(big.Int).Exp(big.NewInt(10), big.NewInt(int64(exponent)), nil)
-			result := new(big.Int).Mul(mantissaBig, multiplier)
-			return result, true
-		} else if exponent < 0 {
-			// Divide by 10^(-exponent) and truncate to integer
-			divisor := new(big.Int).Exp(big.NewInt(10), big.NewInt(int64(-exponent)), nil)
-			result := new(big.Int).Div(mantissaBig, divisor)
-			return result, true
-		} else {
-			// exponent == 0
-			return mantissaBig, true
-		}
-	}
-
-	// Handle decimal numbers without scientific notation (like "600000000000000000000.000000")
-	if strings.Contains(value, ".") {
-		// Split into integer and fractional parts
-		decimalParts := strings.Split(value, ".")
-		if len(decimalParts) != 2 {
-			return nil, false
-		}
-
-		integerPart := decimalParts[0]
-		fractionalPart := decimalParts[1]
-
-		// Check if fractional part contains only zeros
-		allZeros := true
-		for _, digit := range fractionalPart {
-			if digit != '0' {
-				allZeros = false
-				break
-			}
-		}
-
-		// If fractional part is not all zeros, we cannot safely convert to big.Int
-		if !allZeros {
-			return nil, false
-		}
-
-		// Parse the integer part directly
-		result, ok := new(big.Int).SetString(integerPart, 10)
-		if !ok {
-			return nil, false
-		}
-
-		// For integer conversion, we can safely truncate the all-zero decimal part
-		return result, true
-	}
-
-	return nil, false
-}
-
-// parseScientificNotationToUint64 converts scientific notation strings to uint64
-// Handles formats like "1.2e+21", "1e18", etc. that strconv.ParseUint cannot parse directly
-func parseScientificNotationToUint64(value string) (uint64, error) {
-	// First try direct parsing in case it's already a regular integer
-	if result, err := strconv.ParseUint(value, 10, 64); err == nil {
-		return result, nil
-	}
-
-	// Handle scientific notation using the big.Int parser and then convert
-	bigIntResult, ok := parseScientificNotationToBigInt(value)
-	if !ok {
-		return 0, fmt.Errorf("unable to parse scientific notation: %s", value)
-	}
-
-	// Check if the result fits in uint64
-	if !bigIntResult.IsUint64() {
-		return 0, fmt.Errorf("value too large for uint64: %s", value)
-	}
-
-	return bigIntResult.Uint64(), nil
-}
-
-// parseScientificNotationToUint8 converts scientific notation strings to uint8
-// Handles formats like "1e2", "2.5e+1", etc. that strconv.ParseUint cannot parse directly
-func parseScientificNotationToUint8(value string) (uint8, error) {
-	// First try direct parsing in case it's already a regular integer
-	if result, err := strconv.ParseUint(value, 10, 8); err == nil {
-		return uint8(result), nil
-	}
-
-	// Handle scientific notation using the big.Int parser and then convert
-	bigIntResult, ok := parseScientificNotationToBigInt(value)
-	if !ok {
-		return 0, fmt.Errorf("unable to parse scientific notation: %s", value)
-	}
-
-	// Check if the result fits in uint8 (0-255)
-	if bigIntResult.Sign() < 0 || bigIntResult.Cmp(big.NewInt(255)) > 0 {
-		return 0, fmt.Errorf("value out of range for uint8: %s", value)
-	}
-
-	return uint8(bigIntResult.Uint64()), nil
-}
-
-// Helper function to calculate 10^exp for small exponents
-func pow10(exp int) float64 {
-	if exp == 0 {
-		return 1.0
-	}
-	if exp > 0 {
-		result := 1.0
-		for i := 0; i < exp; i++ {
-			result *= 10.0
-		}
-		return result
-	} else {
-		result := 1.0
-		for i := 0; i < -exp; i++ {
-			result /= 10.0
-		}
-		return result
-	}
+	return VerifiableEvent{VerifiableEvent: ve}, nil
 }

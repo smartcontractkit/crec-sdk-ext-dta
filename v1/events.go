@@ -10,7 +10,7 @@ import (
 type EventName string
 
 const (
-	// DTAOpenMarketplaceU events
+	// DTARequestManagementU events
 	EventDistributorRegistered        EventName = "DistributorRegistered"
 	EventDistributorRequestCanceled   EventName = "DistributorRequestCanceled"
 	EventDistributorRequestProcessed  EventName = "DistributorRequestProcessed"
@@ -29,7 +29,7 @@ const (
 	// NAV events
 	EventAnswerUpdated EventName = "AnswerUpdated"
 
-	// DTAWalletU events
+	// DTARequestSettlementU events
 	EventCCIPMessageRecvFailed                EventName = "CCIPMessageRecvFailed"
 	EventDTAAdded                             EventName = "DTAAdded"
 	EventDTARemoved                           EventName = "DTARemoved"
@@ -84,7 +84,7 @@ func (ev EventName) String() string {
 }
 
 // -----------------------------
-// DTAOpenMarketplaceU events as structs
+// DTARequestManagementU events as structs
 // -----------------------------
 
 // DistributorRegistered (address distributorAddr)
@@ -171,7 +171,7 @@ type FundTokenRegistered struct {
 	NavAddr            common.Address `json:"nav_addr"`
 	TokenChainSelector uint64         `json:"token_chain_selector"`
 	//TODO: these would come from an extra read to function getFundToken(address fundAdminAddr,bytes32 fundTokenId)  returns (bool enabled, FundTokenData memory);
-	// DTAWalletAddr                 common.Address `json:"dta_wallet_addr"`
+	// DtaRequestSettlementAddr      common.Address `json:"dta_request_settlement_addr"`
 	// NavFeedDecimals               uint8          `json:"nav_feed_decimals"`
 	// NavTTL                        uint32         `json:"nav_ttl"`
 	// TimezoneOffsetSecs            int64          `json:"timezone_offset_secs"`
@@ -250,7 +250,7 @@ type AnswerUpdated struct {
 }
 
 // -----------------------------
-// DTAWalletU events as structs
+// DTARequestSettlementU events as structs
 // -----------------------------
 
 // CCIPMessageRecvFailed (bytes32 messageId, bytes reason)

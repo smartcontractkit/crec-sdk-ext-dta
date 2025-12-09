@@ -4,7 +4,7 @@ go 1.24
 
 require (
 	github.com/ethereum/go-ethereum v1.16.2
-	github.com/smartcontractkit/crec-api-go v0.3.7-0.20251125185111-95197465fc11
+	github.com/smartcontractkit/crec-api-go v0.3.7-0.20251127135003-1a60c574f449
 	github.com/smartcontractkit/crec-sdk v0.0.0
 	github.com/stretchr/testify v1.10.0
 )

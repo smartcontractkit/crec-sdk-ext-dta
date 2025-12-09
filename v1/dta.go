@@ -12,15 +12,13 @@
 package v1
 
 import (
+	"crypto/rand"
 	"fmt"
 	"log/slog"
 	"math/big"
-	"time"
 
+	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
-
-	"github.com/smartcontractkit/crec-api-go/services/dta/gen/dtarequestmanagement"
-	"github.com/smartcontractkit/crec-api-go/services/dta/gen/dtarequestsettlement"
 
 	"github.com/smartcontractkit/crec-sdk/interfaces/erc20"
 	transactTypes "github.com/smartcontractkit/crec-sdk/transact/types"
@@ -35,6 +33,30 @@ const (
 	TokenBurnTypeTransfer
 )
 
+// DTAPayment represents payment information for DTA operations.
+type DTAPayment struct {
+	OffChainPaymentCurrency uint8
+	PaymentTokenSourceAddr  common.Address
+	PaymentTokenDestAddr    common.Address
+}
+
+// FundTokenData represents the data for registering a fund token.
+type FundTokenData struct {
+	FundTokenAddr                 common.Address
+	NavFeedDecimals               uint8
+	PurchaseTokenRoundingDecimals uint8
+	PurchaseTokenDecimals         uint8
+	FundRoundingDecimals          uint8
+	FundTokenDecimals             uint8
+	RequestsPerDay                uint8
+	NavAddr                       common.Address
+	TokenChainSelector            uint64
+	DtaRequestSettlementAddr      common.Address
+	TimezoneOffsetSecs            *big.Int
+	NavTTL                        *big.Int
+	PaymentInfo                   DTAPayment
+}
+
 // Options defines the configuration for creating a new CREC DTA v1 extension.
 type Options struct {
 	// Logger is an optional logger instance. If nil, a default nop logger is used.
@@ -48,6 +70,20 @@ type Options struct {
 
 	// AccountAddress is the address of the account performing the DTA operations.
 	AccountAddress string
+}
+
+// validate checks that all required options are valid.
+func (o *Options) validate() error {
+	if !common.IsHexAddress(o.DTARequestManagementAddress) {
+		return fmt.Errorf("invalid DTARequestManagementAddress: %q", o.DTARequestManagementAddress)
+	}
+	if !common.IsHexAddress(o.DTARequestSettlementAddress) {
+		return fmt.Errorf("invalid DTARequestSettlementAddress: %q", o.DTARequestSettlementAddress)
+	}
+	if !common.IsHexAddress(o.AccountAddress) {
+		return fmt.Errorf("invalid AccountAddress: %q", o.AccountAddress)
+	}
+	return nil
 }
 
 // Extension provides methods for preparing DTA v1 operations.
@@ -65,12 +101,16 @@ func New(opts *Options) (*Extension, error) {
 		return nil, fmt.Errorf("options is required")
 	}
 
+	if err := opts.validate(); err != nil {
+		return nil, fmt.Errorf("invalid options: %w", err)
+	}
+
 	logger := opts.Logger
 	if logger == nil {
 		logger = slog.Default()
 	}
 
-	logger.Info("Creating CREC DTA v1 extension")
+	logger.Info("creating CREC DTA v1 extension")
 
 	return &Extension{
 		logger:                      logger,
@@ -81,33 +121,62 @@ func New(opts *Options) (*Extension, error) {
 }
 
 // ============================================================================
-// DTARequestManagement Operations
+// Generic Operation Builders (for power users)
 // ============================================================================
 
-// PrepareRequestSubscriptionOperation prepares a DTA request subscription operation.
-func (e *Extension) PrepareRequestSubscriptionOperation(
-	fundAdminAddr common.Address,
-	fundTokenId [32]byte,
-	amount *big.Int,
+// PrepareManagementOperation prepares a generic DTARequestManagement operation.
+// This is an escape hatch for power users who need to call contract methods
+// not covered by the type-safe Prepare* functions.
+func (e *Extension) PrepareManagementOperation(method string, args ...interface{}) (*transactTypes.Operation, error) {
+	return e.prepareOperation(
+		ManagementABI(),
+		e.dtaRequestManagementAddress,
+		method,
+		args...,
+	)
+}
+
+// PrepareSettlementOperation prepares a generic DTARequestSettlement operation.
+// This is an escape hatch for power users who need to call contract methods
+// not covered by the type-safe Prepare* functions.
+func (e *Extension) PrepareSettlementOperation(method string, args ...interface{}) (*transactTypes.Operation, error) {
+	return e.prepareOperation(
+		SettlementABI(),
+		e.dtaRequestSettlementAddress,
+		method,
+		args...,
+	)
+}
+
+// ============================================================================
+// Internal Helpers
+// ============================================================================
+
+// prepareOperation is the internal helper that all operation builders use.
+func (e *Extension) prepareOperation(
+	contractABI *abi.ABI,
+	target common.Address,
+	method string,
+	args ...interface{},
 ) (*transactTypes.Operation, error) {
-	abiEncoder, err := dtarequestmanagement.DtarequestmanagementMetaData.GetAbi()
+	calldata, err := contractABI.Pack(method, args...)
 	if err != nil {
-		e.logger.Error("Failed to get DTARequestManagement ABI", "error", err)
-		return nil, err
+		e.logger.Error("failed to pack calldata", "method", method, "error", err)
+		return nil, fmt.Errorf("pack %s: %w", method, err)
 	}
 
-	calldata, err := abiEncoder.Pack("requestSubscription", fundAdminAddr, fundTokenId, amount)
+	opID, err := generateOperationID()
 	if err != nil {
-		e.logger.Error("Failed to pack calldata for requestSubscription", "error", err)
-		return nil, err
+		e.logger.Error("failed to generate operation ID", "error", err)
+		return nil, fmt.Errorf("generate operation ID: %w", err)
 	}
 
 	return &transactTypes.Operation{
-		ID:      big.NewInt(time.Now().Unix()),
+		ID:      opID,
 		Account: e.accountAddress,
 		Transactions: []transactTypes.Transaction{
 			{
-				To:    e.dtaRequestManagementAddress,
+				To:    target,
 				Value: big.NewInt(0),
 				Data:  calldata,
 			},
@@ -115,36 +184,39 @@ func (e *Extension) PrepareRequestSubscriptionOperation(
 	}, nil
 }
 
-// PrepareRequestRedemptionOperation prepares a DTA request redemption operation.
-func (e *Extension) PrepareRequestRedemptionOperation(
-	fundAdminAddr common.Address,
-	fundTokenId [32]byte,
-	shares *big.Int,
-) (*transactTypes.Operation, error) {
-	abiEncoder, err := dtarequestmanagement.DtarequestmanagementMetaData.GetAbi()
-	if err != nil {
-		e.logger.Error("Failed to get DTARequestManagement ABI", "error", err)
+// generateOperationID creates a cryptographically random operation ID.
+func generateOperationID() (*big.Int, error) {
+	// Generate 16 bytes of random data (128 bits)
+	b := make([]byte, 16)
+	if _, err := rand.Read(b); err != nil {
 		return nil, err
 	}
-
-	calldata, err := abiEncoder.Pack("requestRedemption", fundAdminAddr, fundTokenId, shares)
-	if err != nil {
-		e.logger.Error("Failed to pack calldata for requestRedemption", "error", err)
-		return nil, err
-	}
-
-	return &transactTypes.Operation{
-		ID:      big.NewInt(time.Now().Unix()),
-		Account: e.accountAddress,
-		Transactions: []transactTypes.Transaction{
-			{
-				To:    e.dtaRequestManagementAddress,
-				Value: big.NewInt(0),
-				Data:  calldata,
-			},
-		},
-	}, nil
+	return new(big.Int).SetBytes(b), nil
 }
+
+// prepareManagementOp is a convenience wrapper for DTARequestManagement operations.
+func (e *Extension) prepareManagementOp(method string, args ...interface{}) (*transactTypes.Operation, error) {
+	return e.prepareOperation(
+		ManagementABI(),
+		e.dtaRequestManagementAddress,
+		method,
+		args...,
+	)
+}
+
+// prepareSettlementOp is a convenience wrapper for DTARequestSettlement operations.
+func (e *Extension) prepareSettlementOp(method string, args ...interface{}) (*transactTypes.Operation, error) {
+	return e.prepareOperation(
+		SettlementABI(),
+		e.dtaRequestSettlementAddress,
+		method,
+		args...,
+	)
+}
+
+// ============================================================================
+// Special Operations (multi-transaction or complex types)
+// ============================================================================
 
 // PrepareRequestSubscriptionWithTokenApprovalOperation prepares a subscription operation with token approval.
 func (e *Extension) PrepareRequestSubscriptionWithTokenApprovalOperation(
@@ -155,24 +227,24 @@ func (e *Extension) PrepareRequestSubscriptionWithTokenApprovalOperation(
 ) (*transactTypes.Operation, error) {
 	approveTransaction, err := e.prepareTokenApproveTransaction(&paymentTokenAddress, amount)
 	if err != nil {
-		e.logger.Error("Failed to prepare token approve transaction", "error", err)
-		return nil, err
+		e.logger.Error("failed to prepare token approve transaction", "error", err)
+		return nil, fmt.Errorf("prepare token approve: %w", err)
 	}
 
-	abiEncoder, err := dtarequestmanagement.DtarequestmanagementMetaData.GetAbi()
+	calldata, err := ManagementABI().Pack("requestSubscription", fundAdminAddr, fundTokenId, amount)
 	if err != nil {
-		e.logger.Error("Failed to get DTARequestManagement ABI", "error", err)
-		return nil, err
+		e.logger.Error("failed to pack calldata for requestSubscription", "error", err)
+		return nil, fmt.Errorf("pack requestSubscription: %w", err)
 	}
 
-	calldata, err := abiEncoder.Pack("requestSubscription", fundAdminAddr, fundTokenId, amount)
+	opID, err := generateOperationID()
 	if err != nil {
-		e.logger.Error("Failed to pack calldata for requestSubscription", "error", err)
-		return nil, err
+		e.logger.Error("failed to generate operation ID", "error", err)
+		return nil, fmt.Errorf("generate operation ID: %w", err)
 	}
 
 	return &transactTypes.Operation{
-		ID:      big.NewInt(time.Now().Unix()),
+		ID:      opID,
 		Account: e.accountAddress,
 		Transactions: []transactTypes.Transaction{
 			*approveTransaction,
@@ -185,514 +257,30 @@ func (e *Extension) PrepareRequestSubscriptionWithTokenApprovalOperation(
 	}, nil
 }
 
-// PrepareProcessDistributorRequestOperation prepares a process distributor request operation.
-func (e *Extension) PrepareProcessDistributorRequestOperation(requestId [32]byte) (*transactTypes.Operation, error) {
-	abiEncoder, err := dtarequestmanagement.DtarequestmanagementMetaData.GetAbi()
-	if err != nil {
-		e.logger.Error("Failed to get DTARequestManagement ABI", "error", err)
-		return nil, err
-	}
-
-	calldata, err := abiEncoder.Pack("processDistributorRequest", requestId)
-	if err != nil {
-		e.logger.Error("Failed to pack calldata for processDistributorRequest", "error", err)
-		return nil, err
-	}
-
-	return &transactTypes.Operation{
-		ID:      big.NewInt(time.Now().Unix()),
-		Account: e.accountAddress,
-		Transactions: []transactTypes.Transaction{
-			{
-				To:    e.dtaRequestManagementAddress,
-				Value: big.NewInt(0),
-				Data:  calldata,
-			},
-		},
-	}, nil
-}
-
-// PrepareCancelDistributorRequestOperation prepares a cancel distributor request operation.
-func (e *Extension) PrepareCancelDistributorRequestOperation(requestId [32]byte) (*transactTypes.Operation, error) {
-	abiEncoder, err := dtarequestmanagement.DtarequestmanagementMetaData.GetAbi()
-	if err != nil {
-		e.logger.Error("Failed to get DTARequestManagement ABI", "error", err)
-		return nil, err
-	}
-
-	calldata, err := abiEncoder.Pack("cancelDistributorRequest", requestId)
-	if err != nil {
-		e.logger.Error("Failed to pack calldata for cancelDistributorRequest", "error", err)
-		return nil, err
-	}
-
-	return &transactTypes.Operation{
-		ID:      big.NewInt(time.Now().Unix()),
-		Account: e.accountAddress,
-		Transactions: []transactTypes.Transaction{
-			{
-				To:    e.dtaRequestManagementAddress,
-				Value: big.NewInt(0),
-				Data:  calldata,
-			},
-		},
-	}, nil
-}
-
-// PrepareRegisterDistributorOperation prepares a register distributor operation.
-func (e *Extension) PrepareRegisterDistributorOperation(
-	distributorWalletAddr common.Address,
-) (*transactTypes.Operation, error) {
-	abiEncoder, err := dtarequestmanagement.DtarequestmanagementMetaData.GetAbi()
-	if err != nil {
-		e.logger.Error("Failed to get DTARequestManagement ABI", "error", err)
-		return nil, err
-	}
-
-	calldata, err := abiEncoder.Pack("registerDistributor", distributorWalletAddr)
-	if err != nil {
-		e.logger.Error("Failed to pack calldata for registerDistributor", "error", err)
-		return nil, err
-	}
-
-	return &transactTypes.Operation{
-		ID:      big.NewInt(time.Now().Unix()),
-		Account: e.accountAddress,
-		Transactions: []transactTypes.Transaction{
-			{
-				To:    e.dtaRequestManagementAddress,
-				Value: big.NewInt(0),
-				Data:  calldata,
-			},
-		},
-	}, nil
-}
-
-// PrepareRegisterFundAdminOperation prepares a register fund admin operation.
-func (e *Extension) PrepareRegisterFundAdminOperation(fundAdminAddr common.Address) (*transactTypes.Operation, error) {
-	abiEncoder, err := dtarequestmanagement.DtarequestmanagementMetaData.GetAbi()
-	if err != nil {
-		e.logger.Error("Failed to get DTARequestManagement ABI", "error", err)
-		return nil, err
-	}
-
-	calldata, err := abiEncoder.Pack("registerFundAdmin", fundAdminAddr)
-	if err != nil {
-		e.logger.Error("Failed to pack calldata for registerFundAdmin", "error", err)
-		return nil, err
-	}
-
-	return &transactTypes.Operation{
-		ID:      big.NewInt(time.Now().Unix()),
-		Account: e.accountAddress,
-		Transactions: []transactTypes.Transaction{
-			{
-				To:    e.dtaRequestManagementAddress,
-				Value: big.NewInt(0),
-				Data:  calldata,
-			},
-		},
-	}, nil
-}
-
 // PrepareRegisterFundTokenOperation prepares a register fund token operation.
+// This function has a complex struct type that cannot be auto-generated.
 func (e *Extension) PrepareRegisterFundTokenOperation(
 	fundTokenId [32]byte,
-	tokenData dtarequestmanagement.IFundTokenRegistryFundTokenData,
+	tokenData FundTokenData,
 ) (*transactTypes.Operation, error) {
-	abiEncoder, err := dtarequestmanagement.DtarequestmanagementMetaData.GetAbi()
+	calldata, err := ManagementABI().Pack("registerFundToken", fundTokenId, tokenData)
 	if err != nil {
-		e.logger.Error("Failed to get DTARequestManagement ABI", "error", err)
-		return nil, err
+		e.logger.Error("failed to pack calldata for registerFundToken", "error", err)
+		return nil, fmt.Errorf("pack registerFundToken: %w", err)
 	}
 
-	contractTokenData := dtarequestmanagement.IFundTokenRegistryFundTokenData{
-		FundTokenAddr:                 tokenData.FundTokenAddr,
-		NavFeedDecimals:               tokenData.NavFeedDecimals,
-		PurchaseTokenRoundingDecimals: tokenData.PurchaseTokenRoundingDecimals,
-		PurchaseTokenDecimals:         tokenData.PurchaseTokenDecimals,
-		FundRoundingDecimals:          tokenData.FundRoundingDecimals,
-		FundTokenDecimals:             tokenData.FundTokenDecimals,
-		RequestsPerDay:                tokenData.RequestsPerDay,
-		NavAddr:                       tokenData.NavAddr,
-		TokenChainSelector:            tokenData.TokenChainSelector,
-		DtaRequestSettlementAddr:      tokenData.DtaRequestSettlementAddr,
-		TimezoneOffsetSecs:            tokenData.TimezoneOffsetSecs,
-		NavTTL:                        tokenData.NavTTL,
-		PaymentInfo: dtarequestmanagement.IDTAMessageDTAPayment{
-			OffChainPaymentCurrency: tokenData.PaymentInfo.OffChainPaymentCurrency,
-			PaymentTokenSourceAddr:  tokenData.PaymentInfo.PaymentTokenSourceAddr,
-			PaymentTokenDestAddr:    tokenData.PaymentInfo.PaymentTokenDestAddr,
-		},
-	}
-
-	calldata, err := abiEncoder.Pack("registerFundToken", fundTokenId, contractTokenData)
+	opID, err := generateOperationID()
 	if err != nil {
-		e.logger.Error("Failed to pack calldata for registerFundToken", "error", err)
-		return nil, err
+		e.logger.Error("failed to generate operation ID", "error", err)
+		return nil, fmt.Errorf("generate operation ID: %w", err)
 	}
 
 	return &transactTypes.Operation{
-		ID:      big.NewInt(time.Now().Unix()),
+		ID:      opID,
 		Account: e.accountAddress,
 		Transactions: []transactTypes.Transaction{
 			{
 				To:    e.dtaRequestManagementAddress,
-				Value: big.NewInt(0),
-				Data:  calldata,
-			},
-		},
-	}, nil
-}
-
-// PrepareAllowDistributorForTokenOperation prepares an allow distributor for token operation.
-func (e *Extension) PrepareAllowDistributorForTokenOperation(
-	fundTokenId [32]byte,
-	distributorAddr common.Address,
-) (*transactTypes.Operation, error) {
-	abiEncoder, err := dtarequestmanagement.DtarequestmanagementMetaData.GetAbi()
-	if err != nil {
-		e.logger.Error("Failed to get DTARequestManagement ABI", "error", err)
-		return nil, err
-	}
-
-	calldata, err := abiEncoder.Pack("allowDistributorForToken", fundTokenId, distributorAddr)
-	if err != nil {
-		e.logger.Error("Failed to pack calldata for allowDistributorForToken", "error", err)
-		return nil, err
-	}
-
-	return &transactTypes.Operation{
-		ID:      big.NewInt(time.Now().Unix()),
-		Account: e.accountAddress,
-		Transactions: []transactTypes.Transaction{
-			{
-				To:    e.dtaRequestManagementAddress,
-				Value: big.NewInt(0),
-				Data:  calldata,
-			},
-		},
-	}, nil
-}
-
-// PrepareDisallowDistributorForTokenOperation prepares a disallow distributor for token operation.
-func (e *Extension) PrepareDisallowDistributorForTokenOperation(
-	fundTokenId [32]byte,
-	distributorAddr common.Address,
-) (*transactTypes.Operation, error) {
-	abiEncoder, err := dtarequestmanagement.DtarequestmanagementMetaData.GetAbi()
-	if err != nil {
-		e.logger.Error("Failed to get DTARequestManagement ABI", "error", err)
-		return nil, err
-	}
-
-	calldata, err := abiEncoder.Pack("disallowDistributorForToken", fundTokenId, distributorAddr)
-	if err != nil {
-		e.logger.Error("Failed to pack calldata for disallowDistributorForToken", "error", err)
-		return nil, err
-	}
-
-	return &transactTypes.Operation{
-		ID:      big.NewInt(time.Now().Unix()),
-		Account: e.accountAddress,
-		Transactions: []transactTypes.Transaction{
-			{
-				To:    e.dtaRequestManagementAddress,
-				Value: big.NewInt(0),
-				Data:  calldata,
-			},
-		},
-	}, nil
-}
-
-// PrepareEnableFundTokenOperation prepares an enable fund token operation.
-func (e *Extension) PrepareEnableFundTokenOperation(fundTokenId [32]byte) (*transactTypes.Operation, error) {
-	abiEncoder, err := dtarequestmanagement.DtarequestmanagementMetaData.GetAbi()
-	if err != nil {
-		e.logger.Error("Failed to get DTARequestManagement ABI", "error", err)
-		return nil, err
-	}
-
-	calldata, err := abiEncoder.Pack("enableFundToken", fundTokenId)
-	if err != nil {
-		e.logger.Error("Failed to pack calldata for enableFundToken", "error", err)
-		return nil, err
-	}
-
-	return &transactTypes.Operation{
-		ID:      big.NewInt(time.Now().Unix()),
-		Account: e.accountAddress,
-		Transactions: []transactTypes.Transaction{
-			{
-				To:    e.dtaRequestManagementAddress,
-				Value: big.NewInt(0),
-				Data:  calldata,
-			},
-		},
-	}, nil
-}
-
-// PrepareDisableFundTokenOperation prepares a disable fund token operation.
-func (e *Extension) PrepareDisableFundTokenOperation(fundTokenId [32]byte) (*transactTypes.Operation, error) {
-	abiEncoder, err := dtarequestmanagement.DtarequestmanagementMetaData.GetAbi()
-	if err != nil {
-		e.logger.Error("Failed to get DTARequestManagement ABI", "error", err)
-		return nil, err
-	}
-
-	calldata, err := abiEncoder.Pack("disableFundToken", fundTokenId)
-	if err != nil {
-		e.logger.Error("Failed to pack calldata for disableFundToken", "error", err)
-		return nil, err
-	}
-
-	return &transactTypes.Operation{
-		ID:      big.NewInt(time.Now().Unix()),
-		Account: e.accountAddress,
-		Transactions: []transactTypes.Transaction{
-			{
-				To:    e.dtaRequestManagementAddress,
-				Value: big.NewInt(0),
-				Data:  calldata,
-			},
-		},
-	}, nil
-}
-
-// PrepareVerifyDistributorWalletOperation prepares a verify distributor wallet operation.
-func (e *Extension) PrepareVerifyDistributorWalletOperation(distributorAddr common.Address) (*transactTypes.Operation, error) {
-	abiEncoder, err := dtarequestmanagement.DtarequestmanagementMetaData.GetAbi()
-	if err != nil {
-		e.logger.Error("Failed to get DTARequestManagement ABI", "error", err)
-		return nil, err
-	}
-
-	calldata, err := abiEncoder.Pack("verifyDistributorWallet", distributorAddr)
-	if err != nil {
-		e.logger.Error("Failed to pack calldata for verifyDistributorWallet", "error", err)
-		return nil, err
-	}
-
-	return &transactTypes.Operation{
-		ID:      big.NewInt(time.Now().Unix()),
-		Account: e.accountAddress,
-		Transactions: []transactTypes.Transaction{
-			{
-				To:    e.dtaRequestManagementAddress,
-				Value: big.NewInt(0),
-				Data:  calldata,
-			},
-		},
-	}, nil
-}
-
-// PrepareForceAllowDistributorForTokenOperation prepares a force allow distributor for token operation (admin function).
-func (e *Extension) PrepareForceAllowDistributorForTokenOperation(
-	fundTokenId [32]byte,
-	distributorAddr common.Address,
-) (*transactTypes.Operation, error) {
-	abiEncoder, err := dtarequestmanagement.DtarequestmanagementMetaData.GetAbi()
-	if err != nil {
-		e.logger.Error("Failed to get DTARequestManagement ABI", "error", err)
-		return nil, err
-	}
-
-	calldata, err := abiEncoder.Pack("forceAllowDistributorForToken", fundTokenId, distributorAddr)
-	if err != nil {
-		e.logger.Error("Failed to pack calldata for forceAllowDistributorForToken", "error", err)
-		return nil, err
-	}
-
-	return &transactTypes.Operation{
-		ID:      big.NewInt(time.Now().Unix()),
-		Account: e.accountAddress,
-		Transactions: []transactTypes.Transaction{
-			{
-				To:    e.dtaRequestManagementAddress,
-				Value: big.NewInt(0),
-				Data:  calldata,
-			},
-		},
-	}, nil
-}
-
-// ============================================================================
-// DTARequestSettlement Operations
-// ============================================================================
-
-// PrepareAllowDTAOperation prepares a DTARequestSettlement allow DTA operation.
-func (e *Extension) PrepareAllowDTAOperation(
-	dtaAddr common.Address,
-	dtaChainSelector uint64,
-	fundTokenId [32]byte,
-	fundTokenAddr common.Address,
-	burnType TokenBurnType,
-) (*transactTypes.Operation, error) {
-	abiEncoder, err := dtarequestsettlement.DtarequestsettlementMetaData.GetAbi()
-	if err != nil {
-		e.logger.Error("Failed to get DTARequestSettlement ABI", "error", err)
-		return nil, err
-	}
-
-	calldata, err := abiEncoder.Pack("allowDTA", dtaAddr, dtaChainSelector, fundTokenId, fundTokenAddr, uint8(burnType))
-	if err != nil {
-		e.logger.Error("Failed to pack calldata for allowDTA", "error", err)
-		return nil, err
-	}
-
-	return &transactTypes.Operation{
-		ID:      big.NewInt(time.Now().Unix()),
-		Account: e.accountAddress,
-		Transactions: []transactTypes.Transaction{
-			{
-				To:    e.dtaRequestSettlementAddress,
-				Value: big.NewInt(0),
-				Data:  calldata,
-			},
-		},
-	}, nil
-}
-
-// PrepareDisallowDTAOperation prepares a DTARequestSettlement disallow DTA operation.
-func (e *Extension) PrepareDisallowDTAOperation(
-	dtaAddr common.Address,
-	dtaChainSelector uint64,
-	fundTokenId [32]byte,
-) (*transactTypes.Operation, error) {
-	abiEncoder, err := dtarequestsettlement.DtarequestsettlementMetaData.GetAbi()
-	if err != nil {
-		e.logger.Error("Failed to get DTARequestSettlement ABI", "error", err)
-		return nil, err
-	}
-
-	calldata, err := abiEncoder.Pack("disallowDTA", dtaAddr, dtaChainSelector, fundTokenId)
-	if err != nil {
-		e.logger.Error("Failed to pack calldata for disallowDTA", "error", err)
-		return nil, err
-	}
-
-	return &transactTypes.Operation{
-		ID:      big.NewInt(time.Now().Unix()),
-		Account: e.accountAddress,
-		Transactions: []transactTypes.Transaction{
-			{
-				To:    e.dtaRequestSettlementAddress,
-				Value: big.NewInt(0),
-				Data:  calldata,
-			},
-		},
-	}, nil
-}
-
-// PrepareWithdrawTokensOperation prepares a DTARequestSettlement withdraw tokens operation.
-func (e *Extension) PrepareWithdrawTokensOperation(
-	token common.Address,
-	recipient common.Address,
-	amount *big.Int,
-) (*transactTypes.Operation, error) {
-	abiEncoder, err := dtarequestsettlement.DtarequestsettlementMetaData.GetAbi()
-	if err != nil {
-		e.logger.Error("Failed to get DTARequestSettlement ABI", "error", err)
-		return nil, err
-	}
-
-	calldata, err := abiEncoder.Pack("withdrawTokens", token, recipient, amount)
-	if err != nil {
-		e.logger.Error("Failed to pack calldata for withdrawTokens", "error", err)
-		return nil, err
-	}
-
-	return &transactTypes.Operation{
-		ID:      big.NewInt(time.Now().Unix()),
-		Account: e.accountAddress,
-		Transactions: []transactTypes.Transaction{
-			{
-				To:    e.dtaRequestSettlementAddress,
-				Value: big.NewInt(0),
-				Data:  calldata,
-			},
-		},
-	}, nil
-}
-
-// PrepareTransferDTARequestSettlementOwnershipOperation prepares a DTARequestSettlement transfer ownership operation.
-func (e *Extension) PrepareTransferDTARequestSettlementOwnershipOperation(newOwner common.Address) (*transactTypes.Operation, error) {
-	abiEncoder, err := dtarequestsettlement.DtarequestsettlementMetaData.GetAbi()
-	if err != nil {
-		e.logger.Error("Failed to get DTARequestSettlement ABI", "error", err)
-		return nil, err
-	}
-
-	calldata, err := abiEncoder.Pack("transferOwnership", newOwner)
-	if err != nil {
-		e.logger.Error("Failed to pack calldata for transferOwnership", "error", err)
-		return nil, err
-	}
-
-	return &transactTypes.Operation{
-		ID:      big.NewInt(time.Now().Unix()),
-		Account: e.accountAddress,
-		Transactions: []transactTypes.Transaction{
-			{
-				To:    e.dtaRequestSettlementAddress,
-				Value: big.NewInt(0),
-				Data:  calldata,
-			},
-		},
-	}, nil
-}
-
-// PrepareRenounceDTARequestSettlementOwnershipOperation prepares a DTARequestSettlement renounce ownership operation.
-func (e *Extension) PrepareRenounceDTARequestSettlementOwnershipOperation() (*transactTypes.Operation, error) {
-	abiEncoder, err := dtarequestsettlement.DtarequestsettlementMetaData.GetAbi()
-	if err != nil {
-		e.logger.Error("Failed to get DTARequestSettlement ABI", "error", err)
-		return nil, err
-	}
-
-	calldata, err := abiEncoder.Pack("renounceOwnership")
-	if err != nil {
-		e.logger.Error("Failed to pack calldata for renounceOwnership", "error", err)
-		return nil, err
-	}
-
-	return &transactTypes.Operation{
-		ID:      big.NewInt(time.Now().Unix()),
-		Account: e.accountAddress,
-		Transactions: []transactTypes.Transaction{
-			{
-				To:    e.dtaRequestSettlementAddress,
-				Value: big.NewInt(0),
-				Data:  calldata,
-			},
-		},
-	}, nil
-}
-
-// PrepareCompleteRequestProcessingOperation prepares a DTARequestSettlement complete request processing operation.
-func (e *Extension) PrepareCompleteRequestProcessingOperation(
-	requestId [32]byte,
-	success bool,
-	errorData []byte,
-) (*transactTypes.Operation, error) {
-	abiEncoder, err := dtarequestsettlement.DtarequestsettlementMetaData.GetAbi()
-	if err != nil {
-		e.logger.Error("Failed to get DTARequestSettlement ABI", "error", err)
-		return nil, err
-	}
-
-	calldata, err := abiEncoder.Pack("completeRequestProcessing", requestId, success, errorData)
-	if err != nil {
-		e.logger.Error("Failed to pack calldata for completeRequestProcessing", "error", err)
-		return nil, err
-	}
-
-	return &transactTypes.Operation{
-		ID:      big.NewInt(time.Now().Unix()),
-		Account: e.accountAddress,
-		Transactions: []transactTypes.Transaction{
-			{
-				To:    e.dtaRequestSettlementAddress,
 				Value: big.NewInt(0),
 				Data:  calldata,
 			},
@@ -710,13 +298,13 @@ func (e *Extension) prepareTokenApproveTransaction(
 	erc20Abi, err := erc20.Erc20MetaData.GetAbi()
 	if err != nil {
 		e.logger.Error("failed to get ERC20 ABI", "error", err)
-		return nil, err
+		return nil, fmt.Errorf("get ERC20 ABI: %w", err)
 	}
 
 	calldata, err := erc20Abi.Pack("approve", e.dtaRequestManagementAddress, tokenAmount)
 	if err != nil {
 		e.logger.Error("failed to pack calldata for token approve", "error", err)
-		return nil, err
+		return nil, fmt.Errorf("pack approve: %w", err)
 	}
 
 	return &transactTypes.Transaction{
@@ -725,4 +313,3 @@ func (e *Extension) prepareTokenApproveTransaction(
 		Data:  calldata,
 	}, nil
 }
-

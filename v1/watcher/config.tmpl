@@ -1,0 +1,28 @@
+network: "{{ ((datasource "config").network) }}"
+chainID: "{{ ((datasource "config").chainId) }}"
+chainSelector: {{ ((datasource "config").chainSelector) }}
+workflowEventOtelEndpoint: ""
+courierURL: "{{ ((datasource "config").courierUrl) }}"
+service: "{{ ((datasource "config").service) }}"
+watcherID: "{{ ((datasource "config").watcherID) }}"
+apiKeySecret: "courier"
+detectEventTriggerConfig:
+  contractName: "{{ ((datasource "config").contractName) }}"
+  contractAddress: "{{ ((datasource "config").contractAddress) }}"
+  contractEventName: "{{ ((datasource "config").eventName) }}"
+  contractReaderConfig:
+    contracts:
+      {{ ((datasource "config").contractName) }}:
+        configs:
+          {{ ((datasource "config").eventName) }}: '{"chainSpecificName": "{{ ((datasource "config").eventName) }}", "readType": "event"}'
+        contractABI: '{{ ((datasource "config").contractABI) }}'
+        contractPollingFilter:
+          genericEventNames: ["{{ ((datasource "config").eventName) }}"]
+          pollingFilter:
+            logsPerBlock: 0
+            maxLogsKept: 0
+            retention: "0s"
+            topic2: null
+            topic3: null
+            topic4: null
+

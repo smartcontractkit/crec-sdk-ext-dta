@@ -24,13 +24,47 @@ import (
 	transactTypes "github.com/smartcontractkit/crec-sdk/transact/types"
 )
 
+// TokenMintType represents the mint type for DTA operations.
+// Maps to IDTARequestSettlement.TokenMintType enum in Solidity.
+type TokenMintType uint8
+
+const (
+	TokenMintTypeMint        TokenMintType = iota // mint(address account, uint256 amount) - ERC3643, CMTAT
+	TokenMintTypeIssueTokens                      // issueTokens(address _to, uint256 _value) - DSToken (BUIDL)
+)
+
 // TokenBurnType represents the burn type for DTA operations.
+// Maps to IDTARequestSettlement.TokenBurnType enum in Solidity.
 type TokenBurnType uint8
 
 const (
-	TokenBurnTypeNone TokenBurnType = iota
-	TokenBurnTypeBurn
-	TokenBurnTypeTransfer
+	TokenBurnTypeBurn           TokenBurnType = iota // burn(address account, uint256 value) - ERC3643
+	TokenBurnTypeBurnFrom                            // burnFrom(address account, uint256 value) - CMTAT
+	TokenBurnTypeBurnWithReason                      // burn(address _who, uint256 _value, string _reason) - DSToken (BUIDL)
+	TokenBurnTypeForceBurn                           // forceBurn(address account, uint256 amount, string reason) - CMTAT v2.3.0
+)
+
+// DistributorRequestType represents the type of distributor request.
+// Maps to IDTAMessage.DistributorRequestType enum in Solidity.
+type DistributorRequestType uint8
+
+const (
+	DistributorRequestTypeNone         DistributorRequestType = iota // Zero value
+	DistributorRequestTypeSubscription                               // Subscription request
+	DistributorRequestTypeRedemption                                 // Redemption request
+)
+
+// RequestStatus represents the status of a distributor request.
+// Maps to IDTAMessage.RequestStatus enum in Solidity.
+type RequestStatus uint8
+
+const (
+	RequestStatusNone       RequestStatus = iota // Zero value
+	RequestStatusPending                         // Request is pending
+	RequestStatusProcessing                      // Request is being processed
+	RequestStatusProcessed                       // Request has been processed
+	RequestStatusCanceled                        // Request was canceled
+	RequestStatusFailed                          // Request failed
 )
 
 // DTAPayment represents payment information for DTA operations.

@@ -18,8 +18,8 @@ var (
 )
 
 // PrepareAllowDTAOperation prepares a allowDTA operation on DTARequestSettlement.
-func (e *Extension) PrepareAllowDTAOperation(dtaAddr common.Address, dtaChainSelector uint64, fundAdminAddr common.Address, fundTokenId [32]byte, fundTokenAddr common.Address, mintType uint8, burnType TokenBurnType) (*transactTypes.Operation, error) {
-	return e.prepareSettlementOp("allowDTA", dtaAddr, dtaChainSelector, fundAdminAddr, fundTokenId, fundTokenAddr, mintType, uint8(burnType))
+func (e *Extension) PrepareAllowDTAOperation(dtaAddr common.Address, dtaChainSelector uint64, fundAdminAddr common.Address, fundTokenId [32]byte, fundTokenAddr common.Address, mintType TokenMintType, burnType TokenBurnType) (*transactTypes.Operation, error) {
+	return e.prepareSettlementOp("allowDTA", dtaAddr, dtaChainSelector, fundAdminAddr, fundTokenId, fundTokenAddr, uint8(mintType), uint8(burnType))
 }
 
 // PrepareAllowDistributorForTokenOperation prepares a allowDistributorForToken operation on DTARequestManagement.

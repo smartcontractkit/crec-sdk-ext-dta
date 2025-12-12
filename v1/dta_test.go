@@ -148,9 +148,8 @@ func TestDtaV1_PrepareAllowDTAOperation(t *testing.T) {
 	var fundTokenId [32]byte
 	copy(fundTokenId[:], []byte("testtoken"))
 	fundTokenAddr := common.HexToAddress("0xCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC")
-	var mintType uint8 = 1
 
-	op, err := ext.PrepareAllowDTAOperation(dtaAddr, 1234, fundAdminAddr, fundTokenId, fundTokenAddr, mintType, v1.TokenBurnTypeBurn)
+	op, err := ext.PrepareAllowDTAOperation(dtaAddr, 1234, fundAdminAddr, fundTokenId, fundTokenAddr, v1.TokenMintTypeIssueTokens, v1.TokenBurnTypeBurn)
 	require.NoError(t, err)
 	require.NotNil(t, op)
 	require.Len(t, op.Transactions, 1)
@@ -332,4 +331,3 @@ func TestDtaV1_OperationIDsAreUnique(t *testing.T) {
 		seenIDs[idStr] = true
 	}
 }
-

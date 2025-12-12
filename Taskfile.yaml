@@ -47,10 +47,9 @@ tasks:
 
   generate:
     silent: true
-    desc: "Generate all code (bindings, events, operations)"
+    desc: "Generate all code (bindings, operations, event types)"
     cmds:
       - task: generate:bindings
-      - task: generate:events
       - task: generate:operations
       - echo "✅ All DTA SDK code generation complete"
 
@@ -59,39 +58,29 @@ tasks:
     desc: "Generate Go bindings from ABIs in v1/abi/"
     cmds:
       - echo "🔧 Generating Go bindings from v1/abi/..."
-      - abigen --abi v1/abi/DTARequestManagementU.abi.json --pkg dtarequestmanagement --out v1/bindings/dtarequestmanagement/dtarequestmanagement.gen.go
-      - abigen --abi v1/abi/DTARequestSettlementU.abi.json --pkg dtarequestsettlement --out v1/bindings/dtarequestsettlement/dtarequestsettlement.gen.go
+      - mkdir -p v1/bindings/dtarm v1/bindings/dtars
+      - abigen --abi v1/abi/DTARequestManagementU.abi.json --pkg dtarm --out v1/bindings/dtarm/dtarm.gen.go
+      - abigen --abi v1/abi/DTARequestSettlementU.abi.json --pkg dtars --out v1/bindings/dtars/dtars.gen.go
       - echo "✅ Bindings generated"
     sources:
       - v1/abi/*.json
     generates:
-      - v1/bindings/dtarequestmanagement/dtarequestmanagement.gen.go
-      - v1/bindings/dtarequestsettlement/dtarequestsettlement.gen.go
-
-  generate:events:
-    silent: true
-    desc: "Generate event types from JSON schema"
-    cmds:
-      - echo "🔧 Generating event types from v1/schema/..."
-      - go-jsonschema v1/schema/dta.json -p events -o v1/bindings/events/events.gen.go -t
-      - echo "✅ Event types generated"
-    sources:
-      - v1/schema/dta.json
-    generates:
-      - v1/bindings/events/events.gen.go
+      - v1/bindings/dtarm/dtarm.gen.go
+      - v1/bindings/dtars/dtars.gen.go
 
   generate:operations:
     silent: true
-    desc: "Generate DTA SDK operation functions"
+    desc: "Generate DTA SDK operations and event types from ABIs"
     cmds:
-      - echo "🔧 Generating SDK operations..."
+      - echo "🔧 Generating SDK operations and events..."
       - go run ./v1/gen/main.go
-      - echo "✅ Operations generated"
+      - echo "✅ Operations and events generated"
     sources:
       - v1/gen/main.go
       - v1/abi/*.json
     generates:
       - v1/dta_operations_gen.go
+      - v1/events_gen.go
 
   # -------------------------------------------------------------
   # ---------------- Watcher Workflow Tasks ---------------------

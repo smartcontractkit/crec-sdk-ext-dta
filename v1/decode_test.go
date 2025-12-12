@@ -84,7 +84,7 @@ func TestDecodeFromEvent_DistributorRequestProcessed(t *testing.T) {
 
 	expectedShares, _ := new(big.Int).SetString("12345678901234567890", 10)
 	require.Equal(t, expectedShares, concrete.Shares)
-	require.Equal(t, uint8(7), concrete.Status)
+	require.Equal(t, v1.RequestStatus(7), concrete.Status)
 	require.Equal(t, []byte("some-bytes"), concrete.Error)
 }
 
@@ -201,7 +201,7 @@ func TestDecodeFromEvent_UnsupportedEvent(t *testing.T) {
 
 	_, err := v1.DecodeFromEvent(context.Background(), event)
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "unsupported event type")
+	require.Contains(t, err.Error(), "unsupported event")
 }
 
 func TestDecodeFromEvent_InvalidPayload(t *testing.T) {
@@ -239,7 +239,7 @@ func TestDecodeFromEvent_RedemptionRequested(t *testing.T) {
 	require.Equal(t, expectedShares, concrete.Shares)
 }
 
-func TestDecodeFromEvent_VerifiableEventFields(t *testing.T) {
+func TestDecodeFromEvent_DecodedEventFields(t *testing.T) {
 	data := map[string]interface{}{
 		"distributor_addr": "0x00000000000000000000000000000000000000cc",
 	}
@@ -248,15 +248,15 @@ func TestDecodeFromEvent_VerifiableEventFields(t *testing.T) {
 	event := buildEvent(t, payload)
 
 	result, err := v1.DecodeFromEvent(context.Background(), event)
-				require.NoError(t, err)
+	require.NoError(t, err)
 
-	// Verify metadata fields are populated correctly
-	require.Equal(t, "1", result.Metadata.ChainSelector)
-	require.Equal(t, payload.Address, result.Event.Address)
-	require.Equal(t, payload.Event.EventName, result.Event.Name)
+	// Verify WatcherEventPayload fields are accessible directly
+	require.Equal(t, "1", result.ChainSelector)
+	require.Equal(t, payload.Address, result.Address)
+	require.Equal(t, payload.Event.EventName, result.Event.EventName)
 	require.Equal(t, payload.Event.TopicHash, result.Event.TopicHash)
 	require.Equal(t, payload.Transaction.Hash, result.Transaction.Hash)
-	require.Equal(t, payload.Event.Timestamp, result.CreatedAt)
+	require.Equal(t, payload.Event.Timestamp, result.Event.Timestamp)
 }
 
 // TestEventPayloadRoundTrip verifies that event payloads can be marshalled and unmarshalled

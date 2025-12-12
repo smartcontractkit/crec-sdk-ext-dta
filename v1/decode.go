@@ -2,29 +2,34 @@ package v1
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strconv"
 
 	"github.com/ethereum/go-ethereum/common"
 	apiClient "github.com/smartcontractkit/crec-api-go/client"
 	"github.com/smartcontractkit/crec-sdk-ext-dta/parsing"
-	"github.com/smartcontractkit/crec-sdk-ext-dta/types"
 )
 
-// VerifiableEvent wraps the shared VerifiableEvent type to add version-specific methods.
-type VerifiableEvent struct {
-	types.VerifiableEvent
+// ConcreteEvent represents any decoded concrete event payload.
+type ConcreteEvent interface{}
+
+// DecodedEvent wraps WatcherEventPayload with a decoded ConcreteEvent.
+type DecodedEvent struct {
+	apiClient.WatcherEventPayload
+	ConcreteEvent ConcreteEvent
 }
 
-// EventName determines and returns the event name from the workflow attributes or outer event name;
-// defaults to EventUnknown if not resolvable.
-func (v VerifiableEvent) EventName() EventName {
-	return types.GetEventName(v.VerifiableEvent, EventUnknown, parseEvent)
+// EventName returns the parsed event name from the payload.
+func (e DecodedEvent) EventName() EventName {
+	name, ok := parseEventName(e.Event.EventName)
+	if !ok {
+		return EventUnknown
+	}
+	return name
 }
 
 // eventDecoder is a function that decodes event parameters into a concrete event type.
-type eventDecoder func(params map[string]string, txHash string) (types.ConcreteEvent, error)
+type eventDecoder func(params map[string]string, txHash string) (ConcreteEvent, error)
 
 // eventDecoders maps event names to their decoder functions.
 var eventDecoders = map[EventName]eventDecoder{
@@ -54,67 +59,57 @@ var eventDecoders = map[EventName]eventDecoder{
 	EventDTASettlementClosed:                  decodeDTASettlementClosed,
 	EventDTASettlementOpened:                  decodeDTASettlementOpened,
 	EventEmptyRequestType:                     decodeEmptyRequestType,
-	EventInsufficientPaymentTokenBalance:      decodeInsufficientPaymentTokenBalance,
 	EventInvalidSubscriptionCrossChainPayment: decodeInvalidSubscriptionCrossChainPayment,
 	EventSettlementFailed:                     decodeSettlementFailed,
 	EventTokenWithdrawn:                       decodeTokenWithdrawn,
 	EventUnauthorizedSenderDTA:                decodeUnauthorizedSenderDTA,
 }
 
-// unmarshalVerifiableEvent implements version-specific unmarshaling to populate ConcreteEvent.
-func unmarshalVerifiableEvent(data []byte, v *types.VerifiableEvent) error {
-	// Use an alias to avoid infinite recursion
-	type alias types.VerifiableEvent
-	var a alias
-	if err := json.Unmarshal(data, &a); err != nil {
-		return fmt.Errorf("unmarshal envelope: %w", err)
+// DecodeFromEvent extracts the WatcherEventPayload from an apiClient.Event and decodes
+// the ConcreteEvent based on the event type.
+func DecodeFromEvent(_ context.Context, event apiClient.Event) (DecodedEvent, error) {
+	payload, err := event.Payload.AsWatcherEventPayload()
+	if err != nil {
+		return DecodedEvent{}, fmt.Errorf("extract watcher payload: %w", err)
 	}
 
-	// Copy envelope to receiver
-	*v = types.VerifiableEvent(a)
+	// Convert Data map to string params for decoders
+	params := make(map[string]string, len(payload.Event.Data))
+	for k, v := range payload.Event.Data {
+		params[k] = fmt.Sprintf("%v", v)
+	}
 
-	// Wrap to get EventName method
-	wrapped := VerifiableEvent{VerifiableEvent: *v}
-	name := wrapped.EventName()
-	txHash := v.Transaction.Hash
-
-	// Look up decoder in registry
+	name, ok := parseEventName(payload.Event.EventName)
+	if !ok {
+		return DecodedEvent{}, fmt.Errorf("unsupported event name: %s", payload.Event.EventName)
+	}
 	decoder, ok := eventDecoders[name]
 	if !ok {
-		return fmt.Errorf("unsupported event type %q (tx=%s)", name, txHash)
+		return DecodedEvent{}, fmt.Errorf("unsupported event decoder for event name: %s", name)
 	}
 
-	// Decode the event
-	concrete, err := decoder(v.Event.Parameters, txHash)
+	concrete, err := decoder(params, payload.Transaction.Hash)
 	if err != nil {
-		return fmt.Errorf("decode %s (tx=%s): %w", name, txHash, err)
+		return DecodedEvent{}, fmt.Errorf("decode %s: %w", name, err)
 	}
 
-	v.ConcreteEvent = concrete
-	return nil
-}
-
-// DecodeFromEvent extracts the WatcherEventPayload from an apiClient.Event and converts it
-// to a VerifiableEvent with the ConcreteEvent populated based on the event type.
-func DecodeFromEvent(ctx context.Context, event apiClient.Event) (VerifiableEvent, error) {
-	ve, err := types.DecodeFromEvent(ctx, event, unmarshalVerifiableEvent)
-	if err != nil {
-		return VerifiableEvent{}, err
-	}
-	return VerifiableEvent{VerifiableEvent: ve}, nil
+	return DecodedEvent{
+		WatcherEventPayload: payload,
+		ConcreteEvent:       concrete,
+	}, nil
 }
 
 // ============================================================================
 // Event Decoders
 // ============================================================================
 
-func decodeDistributorRegistered(params map[string]string, _ string) (types.ConcreteEvent, error) {
+func decodeDistributorRegistered(params map[string]string, _ string) (ConcreteEvent, error) {
 	return &DistributorRegistered{
 		DistributorAddr: common.HexToAddress(params["distributor_addr"]),
 	}, nil
 }
 
-func decodeDistributorRequestCanceled(params map[string]string, _ string) (types.ConcreteEvent, error) {
+func decodeDistributorRequestCanceled(params map[string]string, _ string) (ConcreteEvent, error) {
 	return &DistributorRequestCanceled{
 		FundTokenId:     common.HexToHash(params["fund_token_id"]),
 		DistributorAddr: common.HexToAddress(params["distributor_addr"]),
@@ -122,10 +117,10 @@ func decodeDistributorRequestCanceled(params map[string]string, _ string) (types
 	}, nil
 }
 
-func decodeDistributorRequestProcessed(params map[string]string, txHash string) (types.ConcreteEvent, error) {
-	shares, ok := parsing.ScientificNotationToBigInt(params["shares"])
-	if !ok {
-		return nil, fmt.Errorf("parse shares %q: invalid format", params["shares"])
+func decodeDistributorRequestProcessed(params map[string]string, _ string) (ConcreteEvent, error) {
+	shares, err := parsing.ScientificNotationToBigInt(params["shares"])
+	if err != nil {
+		return nil, fmt.Errorf("parse shares %q: %w", params["shares"], err)
 	}
 	status, err := parsing.ScientificNotationToUint8(params["status"])
 	if err != nil {
@@ -134,19 +129,19 @@ func decodeDistributorRequestProcessed(params map[string]string, txHash string) 
 	return &DistributorRequestProcessed{
 		RequestId: common.HexToHash(params["request_id"]),
 		Shares:    shares,
-		Status:    status,
+		Status:    RequestStatus(status),
 		Error:     []byte(params["error"]),
 	}, nil
 }
 
-func decodeDistributorRequestProcessing(params map[string]string, txHash string) (types.ConcreteEvent, error) {
-	shares, ok := parsing.ScientificNotationToBigInt(params["shares"])
-	if !ok {
-		return nil, fmt.Errorf("parse shares %q: invalid format", params["shares"])
+func decodeDistributorRequestProcessing(params map[string]string, _ string) (ConcreteEvent, error) {
+	shares, err := parsing.ScientificNotationToBigInt(params["shares"])
+	if err != nil {
+		return nil, fmt.Errorf("parse shares %q: %w", params["shares"], err)
 	}
-	amount, ok := parsing.ScientificNotationToBigInt(params["amount"])
-	if !ok {
-		return nil, fmt.Errorf("parse amount %q: invalid format", params["amount"])
+	amount, err := parsing.ScientificNotationToBigInt(params["amount"])
+	if err != nil {
+		return nil, fmt.Errorf("parse amount %q: %w", params["amount"], err)
 	}
 	return &DistributorRequestProcessing{
 		FundTokenId:     common.HexToHash(params["fund_token_id"]),
@@ -157,13 +152,13 @@ func decodeDistributorRequestProcessing(params map[string]string, txHash string)
 	}, nil
 }
 
-func decodeFundAdminRegistered(params map[string]string, _ string) (types.ConcreteEvent, error) {
+func decodeFundAdminRegistered(params map[string]string, _ string) (ConcreteEvent, error) {
 	return &FundAdminRegistered{
 		FundAdminAddr: common.HexToAddress(params["fund_admin_addr"]),
 	}, nil
 }
 
-func decodeFundTokenAllowlistUpdated(params map[string]string, txHash string) (types.ConcreteEvent, error) {
+func decodeFundTokenAllowlistUpdated(params map[string]string, _ string) (ConcreteEvent, error) {
 	allowed, err := strconv.ParseBool(params["allowed"])
 	if err != nil {
 		return nil, fmt.Errorf("parse allowed %q: %w", params["allowed"], err)
@@ -176,7 +171,7 @@ func decodeFundTokenAllowlistUpdated(params map[string]string, txHash string) (t
 	}, nil
 }
 
-func decodeFundTokenRegistered(params map[string]string, txHash string) (types.ConcreteEvent, error) {
+func decodeFundTokenRegistered(params map[string]string, _ string) (ConcreteEvent, error) {
 	tokenChainSelector, err := parsing.ScientificNotationToUint64(params["token_chain_selector"])
 	if err != nil {
 		return nil, fmt.Errorf("parse token_chain_selector %q: %w", params["token_chain_selector"], err)
@@ -190,7 +185,7 @@ func decodeFundTokenRegistered(params map[string]string, txHash string) (types.C
 	}, nil
 }
 
-func decodeInitialized(params map[string]string, txHash string) (types.ConcreteEvent, error) {
+func decodeInitialized(params map[string]string, _ string) (ConcreteEvent, error) {
 	version, err := parsing.ScientificNotationToUint64(params["version"])
 	if err != nil {
 		return nil, fmt.Errorf("parse version %q: %w", params["version"], err)
@@ -198,31 +193,31 @@ func decodeInitialized(params map[string]string, txHash string) (types.ConcreteE
 	return &Initialized{Version: version}, nil
 }
 
-func decodeInvalidDTARequestSettlement(params map[string]string, txHash string) (types.ConcreteEvent, error) {
+func decodeInvalidDTARequestSettlement(params map[string]string, _ string) (ConcreteEvent, error) {
 	actualChainSelector, err := parsing.ScientificNotationToUint64(params["actual_chain_selector"])
 	if err != nil {
 		return nil, fmt.Errorf("parse actual_chain_selector %q: %w", params["actual_chain_selector"], err)
 	}
 	return &InvalidDTARequestSettlement{
-		FundAdminAddr:            common.HexToAddress(params["fund_admin_addr"]),
-		FundTokenId:              common.HexToHash(params["fund_token_id"]),
-		RequestId:                common.HexToHash(params["request_id"]),
-		ActualChainSelector:      actualChainSelector,
-		ActualDTAAdminWalletAddr: common.HexToAddress(params["actual_dta_admin_wallet_addr"]),
+		FundAdminAddr:                  common.HexToAddress(params["fund_admin_addr"]),
+		FundTokenId:                    common.HexToHash(params["fund_token_id"]),
+		RequestId:                      common.HexToHash(params["request_id"]),
+		ActualChainSelector:            actualChainSelector,
+		ActualDTARequestSettlementAddr: common.HexToAddress(params["actual_dta_request_settlement_addr"]),
 	}, nil
 }
 
-func decodeMessageFailed(params map[string]string, _ string) (types.ConcreteEvent, error) {
+func decodeMessageFailed(params map[string]string, _ string) (ConcreteEvent, error) {
 	return &MessageFailed{
 		MessageId: common.HexToHash(params["message_id"]),
 		Reason:    []byte(params["reason"]),
 	}, nil
 }
 
-func decodeNativeFundsRecovered(params map[string]string, txHash string) (types.ConcreteEvent, error) {
-	amount, ok := parsing.ScientificNotationToBigInt(params["amount"])
-	if !ok {
-		return nil, fmt.Errorf("parse amount %q: invalid format", params["amount"])
+func decodeNativeFundsRecovered(params map[string]string, _ string) (ConcreteEvent, error) {
+	amount, err := parsing.ScientificNotationToBigInt(params["amount"])
+	if err != nil {
+		return nil, fmt.Errorf("parse amount %q: %w", params["amount"], err)
 	}
 	return &NativeFundsRecovered{
 		To:     common.HexToAddress(params["to"]),
@@ -230,17 +225,17 @@ func decodeNativeFundsRecovered(params map[string]string, txHash string) (types.
 	}, nil
 }
 
-func decodeOwnershipTransferred(params map[string]string, _ string) (types.ConcreteEvent, error) {
+func decodeOwnershipTransferred(params map[string]string, _ string) (ConcreteEvent, error) {
 	return &OwnershipTransferred{
 		PreviousOwner: common.HexToAddress(params["previous_owner"]),
 		NewOwner:      common.HexToAddress(params["new_owner"]),
 	}, nil
 }
 
-func decodeRedemptionRequested(params map[string]string, txHash string) (types.ConcreteEvent, error) {
-	shares, ok := parsing.ScientificNotationToBigInt(params["shares"])
-	if !ok {
-		return nil, fmt.Errorf("parse shares %q: invalid format", params["shares"])
+func decodeRedemptionRequested(params map[string]string, _ string) (ConcreteEvent, error) {
+	shares, err := parsing.ScientificNotationToBigInt(params["shares"])
+	if err != nil {
+		return nil, fmt.Errorf("parse shares %q: %w", params["shares"], err)
 	}
 	createdAt, err := parsing.ScientificNotationToUint64(params["created_at"])
 	if err != nil {
@@ -255,10 +250,10 @@ func decodeRedemptionRequested(params map[string]string, txHash string) (types.C
 	}, nil
 }
 
-func decodeSubscriptionRequested(params map[string]string, txHash string) (types.ConcreteEvent, error) {
-	amount, ok := parsing.ScientificNotationToBigInt(params["amount"])
-	if !ok {
-		return nil, fmt.Errorf("parse amount %q: invalid format", params["amount"])
+func decodeSubscriptionRequested(params map[string]string, _ string) (ConcreteEvent, error) {
+	amount, err := parsing.ScientificNotationToBigInt(params["amount"])
+	if err != nil {
+		return nil, fmt.Errorf("parse amount %q: %w", params["amount"], err)
 	}
 	createdAt, err := parsing.ScientificNotationToUint64(params["created_at"])
 	if err != nil {
@@ -273,30 +268,30 @@ func decodeSubscriptionRequested(params map[string]string, txHash string) (types
 	}, nil
 }
 
-func decodeAnswerUpdated(params map[string]string, txHash string) (types.ConcreteEvent, error) {
-	current, ok := parsing.ScientificNotationToBigInt(params["current"])
-	if !ok {
-		return nil, fmt.Errorf("parse current %q: invalid format", params["current"])
+func decodeAnswerUpdated(params map[string]string, _ string) (ConcreteEvent, error) {
+	current, err := parsing.ScientificNotationToBigInt(params["current"])
+	if err != nil {
+		return nil, fmt.Errorf("parse current %q: %w", params["current"], err)
 	}
-	roundId, ok := parsing.ScientificNotationToBigInt(params["roundId"])
-	if !ok {
-		return nil, fmt.Errorf("parse roundId %q: invalid format", params["roundId"])
+	roundId, err := parsing.ScientificNotationToBigInt(params["roundId"])
+	if err != nil {
+		return nil, fmt.Errorf("parse roundId %q: %w", params["roundId"], err)
 	}
-	updatedAt, ok := parsing.ScientificNotationToBigInt(params["updatedAt"])
-	if !ok {
-		return nil, fmt.Errorf("parse updatedAt %q: invalid format", params["updatedAt"])
+	updatedAt, err := parsing.ScientificNotationToBigInt(params["updatedAt"])
+	if err != nil {
+		return nil, fmt.Errorf("parse updatedAt %q: %w", params["updatedAt"], err)
 	}
 	return &AnswerUpdated{Current: current, RoundId: roundId, UpdatedAt: updatedAt}, nil
 }
 
-func decodeCCIPMessageRecvFailed(params map[string]string, _ string) (types.ConcreteEvent, error) {
+func decodeCCIPMessageRecvFailed(params map[string]string, _ string) (ConcreteEvent, error) {
 	return &CCIPMessageRecvFailed{
 		MessageId: common.HexToHash(params["message_id"]),
 		Reason:    []byte(params["reason"]),
 	}, nil
 }
 
-func decodeDTAAdded(params map[string]string, txHash string) (types.ConcreteEvent, error) {
+func decodeDTAAdded(params map[string]string, _ string) (ConcreteEvent, error) {
 	dtaChainSelector, err := parsing.ScientificNotationToUint64(params["dta_chain_selector"])
 	if err != nil {
 		return nil, fmt.Errorf("parse dta_chain_selector %q: %w", params["dta_chain_selector"], err)
@@ -309,7 +304,7 @@ func decodeDTAAdded(params map[string]string, txHash string) (types.ConcreteEven
 	}, nil
 }
 
-func decodeDTARemoved(params map[string]string, txHash string) (types.ConcreteEvent, error) {
+func decodeDTARemoved(params map[string]string, _ string) (ConcreteEvent, error) {
 	dtaChainSelector, err := parsing.ScientificNotationToUint64(params["dta_chain_selector"])
 	if err != nil {
 		return nil, fmt.Errorf("parse dta_chain_selector %q: %w", params["dta_chain_selector"], err)
@@ -321,7 +316,7 @@ func decodeDTARemoved(params map[string]string, txHash string) (types.ConcreteEv
 	}, nil
 }
 
-func decodeDTASettlementClosed(params map[string]string, txHash string) (types.ConcreteEvent, error) {
+func decodeDTASettlementClosed(params map[string]string, _ string) (ConcreteEvent, error) {
 	requestType, err := parsing.ScientificNotationToUint8(params["request_type"])
 	if err != nil {
 		return nil, fmt.Errorf("parse request_type %q: %w", params["request_type"], err)
@@ -336,7 +331,7 @@ func decodeDTASettlementClosed(params map[string]string, txHash string) (types.C
 	}
 	return &DTASettlementClosed{
 		DistributorAddr:  common.HexToAddress(params["distributor_addr"]),
-		RequestType:      requestType,
+		RequestType:      DistributorRequestType(requestType),
 		FundTokenId:      common.HexToHash(params["fund_token_id"]),
 		DtaChainSelector: dtaChainSelector,
 		DtaAddr:          common.HexToAddress(params["dta_addr"]),
@@ -346,7 +341,7 @@ func decodeDTASettlementClosed(params map[string]string, txHash string) (types.C
 	}, nil
 }
 
-func decodeDTASettlementOpened(params map[string]string, txHash string) (types.ConcreteEvent, error) {
+func decodeDTASettlementOpened(params map[string]string, _ string) (ConcreteEvent, error) {
 	requestType, err := parsing.ScientificNotationToUint8(params["request_type"])
 	if err != nil {
 		return nil, fmt.Errorf("parse request_type %q: %w", params["request_type"], err)
@@ -355,13 +350,13 @@ func decodeDTASettlementOpened(params map[string]string, txHash string) (types.C
 	if err != nil {
 		return nil, fmt.Errorf("parse dta_chain_selector %q: %w", params["dta_chain_selector"], err)
 	}
-	shares, ok := parsing.ScientificNotationToBigInt(params["shares"])
-	if !ok {
-		return nil, fmt.Errorf("parse shares %q: invalid format", params["shares"])
+	shares, err := parsing.ScientificNotationToBigInt(params["shares"])
+	if err != nil {
+		return nil, fmt.Errorf("parse shares %q: %w", params["shares"], err)
 	}
-	amount, ok := parsing.ScientificNotationToBigInt(params["amount"])
-	if !ok {
-		return nil, fmt.Errorf("parse amount %q: invalid format", params["amount"])
+	amount, err := parsing.ScientificNotationToBigInt(params["amount"])
+	if err != nil {
+		return nil, fmt.Errorf("parse amount %q: %w", params["amount"], err)
 	}
 	currency, err := parsing.ScientificNotationToUint8(params["currency"])
 	if err != nil {
@@ -369,7 +364,7 @@ func decodeDTASettlementOpened(params map[string]string, txHash string) (types.C
 	}
 	return &DTASettlementOpened{
 		DistributorAddr:       common.HexToAddress(params["distributor_addr"]),
-		RequestType:           requestType,
+		RequestType:           DistributorRequestType(requestType),
 		FundTokenId:           common.HexToHash(params["fund_token_id"]),
 		FundAdminAddr:         common.HexToAddress(params["fund_admin_addr"]),
 		DtaChainSelector:      dtaChainSelector,
@@ -382,49 +377,36 @@ func decodeDTASettlementOpened(params map[string]string, txHash string) (types.C
 	}, nil
 }
 
-func decodeEmptyRequestType(params map[string]string, _ string) (types.ConcreteEvent, error) {
+func decodeEmptyRequestType(params map[string]string, _ string) (ConcreteEvent, error) {
 	return &EmptyRequestType{
 		MessageId: common.HexToHash(params["message_id"]),
 		RequestId: common.HexToHash(params["request_id"]),
 	}, nil
 }
 
-func decodeInsufficientPaymentTokenBalance(params map[string]string, txHash string) (types.ConcreteEvent, error) {
-	amount, ok := parsing.ScientificNotationToBigInt(params["amount"])
-	if !ok {
-		return nil, fmt.Errorf("parse amount %q: invalid format", params["amount"])
-	}
-	return &InsufficientPaymentTokenBalance{
-		FundTokenId:           common.HexToHash(params["fund_token_id"]),
-		DistributorAddr:       common.HexToAddress(params["distributor_addr"]),
-		DistributorWalletAddr: common.HexToAddress(params["distributor_wallet_addr"]),
-		RequestId:             common.HexToHash(params["request_id"]),
-		Amount:                amount,
-	}, nil
-}
-
-func decodeInvalidSubscriptionCrossChainPayment(params map[string]string, txHash string) (types.ConcreteEvent, error) {
-	ccipDestTokenAmountsLength, ok := parsing.ScientificNotationToBigInt(params["ccip_dest_token_amounts_length"])
-	if !ok {
-		return nil, fmt.Errorf("parse ccip_dest_token_amounts_length %q: invalid format", params["ccip_dest_token_amounts_length"])
+func decodeInvalidSubscriptionCrossChainPayment(params map[string]string, _ string) (ConcreteEvent, error) {
+	ccipDestTokenAmountsLength, err := parsing.ScientificNotationToBigInt(params["ccip_dest_token_amounts_length"])
+	if err != nil {
+		return nil, fmt.Errorf("parse ccip_dest_token_amounts_length %q: %w", params["ccip_dest_token_amounts_length"], err)
 	}
 	return &InvalidSubscriptionCrossChainPayment{
+		FundAdminAddr:              common.HexToAddress(params["fund_admin_addr"]),
 		FundTokenId:                common.HexToHash(params["fund_token_id"]),
 		RequestId:                  common.HexToHash(params["request_id"]),
 		PaymentTokenDestAddr:       common.HexToAddress(params["payment_token_dest_addr"]),
-		CCIPDestTokenAmountsLength: ccipDestTokenAmountsLength,
-		CCIPPaymentTokenAddr:       common.HexToAddress(params["ccip_payment_token_addr"]),
+		CcipDestTokenAmountsLength: ccipDestTokenAmountsLength,
+		CcipPaymentTokenAddr:       common.HexToAddress(params["ccip_payment_token_addr"]),
 	}, nil
 }
 
-func decodeSettlementFailed(params map[string]string, txHash string) (types.ConcreteEvent, error) {
-	shares, ok := parsing.ScientificNotationToBigInt(params["shares"])
-	if !ok {
-		return nil, fmt.Errorf("parse shares %q: invalid format", params["shares"])
+func decodeSettlementFailed(params map[string]string, _ string) (ConcreteEvent, error) {
+	shares, err := parsing.ScientificNotationToBigInt(params["shares"])
+	if err != nil {
+		return nil, fmt.Errorf("parse shares %q: %w", params["shares"], err)
 	}
-	amount, ok := parsing.ScientificNotationToBigInt(params["amount"])
-	if !ok {
-		return nil, fmt.Errorf("parse amount %q: invalid format", params["amount"])
+	amount, err := parsing.ScientificNotationToBigInt(params["amount"])
+	if err != nil {
+		return nil, fmt.Errorf("parse amount %q: %w", params["amount"], err)
 	}
 	return &SettlementFailed{
 		FundTokenId:           common.HexToHash(params["fund_token_id"]),
@@ -438,10 +420,10 @@ func decodeSettlementFailed(params map[string]string, txHash string) (types.Conc
 	}, nil
 }
 
-func decodeTokenWithdrawn(params map[string]string, txHash string) (types.ConcreteEvent, error) {
-	amount, ok := parsing.ScientificNotationToBigInt(params["amount"])
-	if !ok {
-		return nil, fmt.Errorf("parse amount %q: invalid format", params["amount"])
+func decodeTokenWithdrawn(params map[string]string, _ string) (ConcreteEvent, error) {
+	amount, err := parsing.ScientificNotationToBigInt(params["amount"])
+	if err != nil {
+		return nil, fmt.Errorf("parse amount %q: %w", params["amount"], err)
 	}
 	return &TokenWithdrawn{
 		Token:     common.HexToAddress(params["token"]),
@@ -450,7 +432,7 @@ func decodeTokenWithdrawn(params map[string]string, txHash string) (types.Concre
 	}, nil
 }
 
-func decodeUnauthorizedSenderDTA(params map[string]string, txHash string) (types.ConcreteEvent, error) {
+func decodeUnauthorizedSenderDTA(params map[string]string, _ string) (ConcreteEvent, error) {
 	reqType, err := parsing.ScientificNotationToUint8(params["req_type"])
 	if err != nil {
 		return nil, fmt.Errorf("parse req_type %q: %w", params["req_type"], err)
@@ -465,6 +447,6 @@ func decodeUnauthorizedSenderDTA(params map[string]string, txHash string) (types
 		FundTokenId:      common.HexToHash(params["fund_token_id"]),
 		DistributorAddr:  common.HexToAddress(params["distributor_addr"]),
 		RequestId:        common.HexToHash(params["request_id"]),
-		ReqType:          reqType,
+		ReqType:          DistributorRequestType(reqType),
 	}, nil
 }

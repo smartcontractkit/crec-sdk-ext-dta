@@ -10,163 +10,139 @@ import (
 )
 
 // ScientificNotationToBigInt converts scientific notation strings to big.Int.
-// Handles formats like "1.2e+21", "1e18", etc. that big.Int.SetString cannot parse directly.
+// Handles formats like "1.2e+21", "1e18", "-5e10", etc. that big.Int.SetString cannot parse directly.
 // Also handles decimal numbers like "600000000000000000000.000000".
-// Returns nil and false if parsing fails.
-func ScientificNotationToBigInt(value string) (*big.Int, bool) {
-	// First try direct parsing in case it's already a regular integer
+// Returns an error if parsing fails.
+func ScientificNotationToBigInt(value string) (*big.Int, error) {
+	if value == "" {
+		return nil, fmt.Errorf("empty string")
+	}
+
+	// Fast path: try direct integer parsing
 	if result, ok := new(big.Int).SetString(value, 10); ok {
-		return result, true
+		return result, nil
 	}
 
-	// Handle scientific notation
-	lowerValue := strings.ToLower(value)
-	if strings.Contains(lowerValue, "e") {
-		// Split on 'e' to get mantissa and exponent
-		parts := strings.Split(lowerValue, "e")
-		if len(parts) != 2 {
-			return nil, false
-		}
-
-		mantissaStr := parts[0]
-		exponentStr := parts[1]
-
-		// Remove optional '+' from exponent
-		exponentStr = strings.TrimPrefix(exponentStr, "+")
-
-		// Parse exponent as integer
-		exponent, err := strconv.Atoi(exponentStr)
-		if err != nil {
-			return nil, false
-		}
-
-		// Handle negative exponents (fractional results truncated to integer)
-		if exponent < 0 {
-			// For negative exponents, we need to check if the result would be < 1
-			// If so, truncate to 0 (integer part)
-			mantissaFloat, err := strconv.ParseFloat(mantissaStr, 64)
-			if err != nil {
-				return nil, false
-			}
-
-			// Calculate the actual value to see if it's < 1
-			actualValue := mantissaFloat * pow10(exponent)
-			if actualValue < 1.0 {
-				return big.NewInt(0), true
-			}
-
-			// If >= 1, we need to handle it properly
-			// Convert to string without scientific notation and truncate decimal part
-			decimalStr := fmt.Sprintf("%.0f", actualValue)
-			if result, ok := new(big.Int).SetString(decimalStr, 10); ok {
-				return result, true
-			}
-			return nil, false
-		}
-
-		// For positive exponents, handle manually to avoid precision loss
-		var mantissaBig *big.Int
-
-		// Check if mantissa has decimal point
-		if strings.Contains(mantissaStr, ".") {
-			// Split mantissa into integer and fractional parts
-			decimalParts := strings.Split(mantissaStr, ".")
-			if len(decimalParts) != 2 {
-				return nil, false
-			}
-
-			integerPart := decimalParts[0]
-			fractionalPart := decimalParts[1]
-
-			// Combine integer and fractional parts
-			combinedStr := integerPart + fractionalPart
-
-			// Parse as big integer
-			var ok bool
-			mantissaBig, ok = new(big.Int).SetString(combinedStr, 10)
-			if !ok {
-				return nil, false
-			}
-
-			// Adjust exponent to account for the fractional digits
-			exponent -= len(fractionalPart)
-		} else {
-			// No decimal point, parse directly
-			var ok bool
-			mantissaBig, ok = new(big.Int).SetString(mantissaStr, 10)
-			if !ok {
-				return nil, false
-			}
-		}
-
-		// Multiply by 10^exponent
-		if exponent > 0 {
-			// Multiply by 10^exponent
-			multiplier := new(big.Int).Exp(big.NewInt(10), big.NewInt(int64(exponent)), nil)
-			result := new(big.Int).Mul(mantissaBig, multiplier)
-			return result, true
-		} else if exponent < 0 {
-			// Divide by 10^(-exponent) and truncate to integer
-			divisor := new(big.Int).Exp(big.NewInt(10), big.NewInt(int64(-exponent)), nil)
-			result := new(big.Int).Div(mantissaBig, divisor)
-			return result, true
-		} else {
-			// exponent == 0
-			return mantissaBig, true
-		}
+	// Check for scientific notation (e or E) without allocating a lowercase copy
+	eIndex := strings.IndexAny(value, "eE")
+	if eIndex >= 0 {
+		return parseScientificNotation(value[:eIndex], value[eIndex+1:])
 	}
 
-	// Handle decimal numbers without scientific notation (like "600000000000000000000.000000")
-	if strings.Contains(value, ".") {
-		// Split into integer and fractional parts
-		decimalParts := strings.Split(value, ".")
-		if len(decimalParts) != 2 {
-			return nil, false
+	// Handle plain decimal numbers (e.g., "123.000000")
+	return parseDecimalNumber(value)
+}
+
+// parseScientificNotation handles the "mantissa e exponent" format using pure big.Int arithmetic.
+func parseScientificNotation(mantissaStr, exponentStr string) (*big.Int, error) {
+	if mantissaStr == "" {
+		return nil, fmt.Errorf("empty mantissa")
+	}
+	if exponentStr == "" {
+		return nil, fmt.Errorf("empty exponent")
+	}
+
+	// Parse exponent, removing optional '+' sign
+	exponentStr = strings.TrimPrefix(exponentStr, "+")
+	exponent, err := strconv.Atoi(exponentStr)
+	if err != nil {
+		return nil, fmt.Errorf("invalid exponent %q: %w", exponentStr, err)
+	}
+
+	// Parse mantissa, handling decimal point
+	var mantissaBig *big.Int
+	if dotIndex := strings.Index(mantissaStr, "."); dotIndex >= 0 {
+		intPart := mantissaStr[:dotIndex]
+		fracPart := mantissaStr[dotIndex+1:]
+
+		// Validate parts
+		if len(intPart) == 0 && len(fracPart) == 0 {
+			return nil, fmt.Errorf("invalid mantissa: no digits")
 		}
 
-		integerPart := decimalParts[0]
-		fractionalPart := decimalParts[1]
-
-		// Check if fractional part contains only zeros
-		allZeros := true
-		for _, digit := range fractionalPart {
-			if digit != '0' {
-				allZeros = false
-				break
-			}
+		// Handle case where integer part is just a sign or empty
+		combinedStr := intPart + fracPart
+		if combinedStr == "" || combinedStr == "-" || combinedStr == "+" {
+			return nil, fmt.Errorf("invalid mantissa %q", mantissaStr)
 		}
 
-		// If fractional part is not all zeros, we cannot safely convert to big.Int
-		if !allZeros {
-			return nil, false
-		}
-
-		// Parse the integer part directly
-		result, ok := new(big.Int).SetString(integerPart, 10)
+		var ok bool
+		mantissaBig, ok = new(big.Int).SetString(combinedStr, 10)
 		if !ok {
-			return nil, false
+			return nil, fmt.Errorf("invalid mantissa %q", mantissaStr)
 		}
-
-		// For integer conversion, we can safely truncate the all-zero decimal part
-		return result, true
+		exponent -= len(fracPart)
+	} else {
+		var ok bool
+		mantissaBig, ok = new(big.Int).SetString(mantissaStr, 10)
+		if !ok {
+			return nil, fmt.Errorf("invalid mantissa %q", mantissaStr)
+		}
 	}
 
-	return nil, false
+	// Apply exponent using big.Int arithmetic (no float64 precision loss)
+	if exponent > 0 {
+		multiplier := new(big.Int).Exp(big.NewInt(10), big.NewInt(int64(exponent)), nil)
+		return mantissaBig.Mul(mantissaBig, multiplier), nil
+	} else if exponent < 0 {
+		// Divide and truncate toward zero
+		divisor := new(big.Int).Exp(big.NewInt(10), big.NewInt(int64(-exponent)), nil)
+		return mantissaBig.Div(mantissaBig, divisor), nil
+	}
+	return mantissaBig, nil
+}
+
+// parseDecimalNumber handles plain decimal numbers like "123.000000".
+// Only succeeds if the fractional part is all zeros (can be safely truncated).
+func parseDecimalNumber(value string) (*big.Int, error) {
+	dotIndex := strings.Index(value, ".")
+	if dotIndex < 0 {
+		return nil, fmt.Errorf("invalid number format: %q", value)
+	}
+
+	intPart := value[:dotIndex]
+	fracPart := value[dotIndex+1:]
+
+	// Validate we have something to parse
+	if intPart == "" && fracPart == "" {
+		return nil, fmt.Errorf("invalid decimal: no digits")
+	}
+
+	// Only allow conversion if fractional part is all zeros
+	if strings.Trim(fracPart, "0") != "" {
+		return nil, fmt.Errorf("non-zero fractional part cannot be converted to integer: %q", value)
+	}
+
+	// Handle empty integer part (e.g., ".000")
+	if intPart == "" {
+		return big.NewInt(0), nil
+	}
+
+	result, ok := new(big.Int).SetString(intPart, 10)
+	if !ok {
+		return nil, fmt.Errorf("invalid integer part: %q", intPart)
+	}
+	return result, nil
 }
 
 // ScientificNotationToUint64 converts scientific notation strings to uint64.
 // Handles formats like "1.2e+21", "1e18", etc. that strconv.ParseUint cannot parse directly.
 // Returns an error if the value cannot be parsed or is too large for uint64.
 func ScientificNotationToUint64(value string) (uint64, error) {
-	// First try direct parsing in case it's already a regular integer
+	// Fast path: try direct parsing
 	if result, err := strconv.ParseUint(value, 10, 64); err == nil {
 		return result, nil
 	}
 
 	// Handle scientific notation using the big.Int parser and then convert
-	bigIntResult, ok := ScientificNotationToBigInt(value)
-	if !ok {
-		return 0, fmt.Errorf("unable to parse scientific notation: %s", value)
+	bigIntResult, err := ScientificNotationToBigInt(value)
+	if err != nil {
+		return 0, fmt.Errorf("unable to parse: %w", err)
+	}
+
+	// Check for negative values
+	if bigIntResult.Sign() < 0 {
+		return 0, fmt.Errorf("negative value not allowed for uint64: %s", value)
 	}
 
 	// Check if the result fits in uint64
@@ -181,15 +157,15 @@ func ScientificNotationToUint64(value string) (uint64, error) {
 // Handles formats like "1e2", "2.5e+1", etc. that strconv.ParseUint cannot parse directly.
 // Returns an error if the value cannot be parsed or is out of range for uint8.
 func ScientificNotationToUint8(value string) (uint8, error) {
-	// First try direct parsing in case it's already a regular integer
+	// Fast path: try direct parsing
 	if result, err := strconv.ParseUint(value, 10, 8); err == nil {
 		return uint8(result), nil
 	}
 
 	// Handle scientific notation using the big.Int parser and then convert
-	bigIntResult, ok := ScientificNotationToBigInt(value)
-	if !ok {
-		return 0, fmt.Errorf("unable to parse scientific notation: %s", value)
+	bigIntResult, err := ScientificNotationToBigInt(value)
+	if err != nil {
+		return 0, fmt.Errorf("unable to parse: %w", err)
 	}
 
 	// Check if the result fits in uint8 (0-255)
@@ -199,24 +175,3 @@ func ScientificNotationToUint8(value string) (uint8, error) {
 
 	return uint8(bigIntResult.Uint64()), nil
 }
-
-// pow10 calculates 10^exp for small exponents using float64 arithmetic.
-func pow10(exp int) float64 {
-	if exp == 0 {
-		return 1.0
-	}
-	if exp > 0 {
-		result := 1.0
-		for i := 0; i < exp; i++ {
-			result *= 10.0
-		}
-		return result
-	} else {
-		result := 1.0
-		for i := 0; i < -exp; i++ {
-			result /= 10.0
-		}
-		return result
-	}
-}
-

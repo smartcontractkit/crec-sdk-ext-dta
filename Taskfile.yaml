@@ -70,17 +70,18 @@ tasks:
 
   generate:operations:
     silent: true
-    desc: "Generate DTA SDK operations and event types from ABIs"
+    desc: "Generate DTA SDK operations, event types, and decoders from ABIs"
     cmds:
-      - echo "🔧 Generating SDK operations and events..."
+      - echo "🔧 Generating SDK operations, events, and decoders..."
       - go run ./v1/gen/main.go
-      - echo "✅ Operations and events generated"
+      - echo "✅ Operations, events, and decoders generated"
     sources:
       - v1/gen/main.go
       - v1/abi/*.json
     generates:
       - v1/dta_operations_gen.go
       - v1/events_gen.go
+      - v1/decode_gen.go
 
   # -------------------------------------------------------------
   # ---------------- Watcher Workflow Tasks ---------------------

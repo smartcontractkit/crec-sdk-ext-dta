@@ -1,11 +1,9 @@
 package v1
 
 import (
-	"crypto/rand"
 	"fmt"
 	"math/big"
 
-	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
 
 	"github.com/smartcontractkit/crec-sdk/interfaces/erc20"
@@ -13,36 +11,11 @@ import (
 )
 
 // ============================================================================
-// Generic Operation Builders (for power users)
-// ============================================================================
-
-// PrepareManagementOperation prepares a generic DTARequestManagement operation.
-// This is an escape hatch for power users who need to call contract methods
-// not covered by the type-safe Prepare* functions.
-func (e *Extension) PrepareManagementOperation(method string, args ...interface{}) (*transactTypes.Operation, error) {
-	return e.prepareOperation(
-		ManagementABI(),
-		e.dtaRequestManagementAddress,
-		method,
-		args...,
-	)
-}
-
-// PrepareSettlementOperation prepares a generic DTARequestSettlement operation.
-// This is an escape hatch for power users who need to call contract methods
-// not covered by the type-safe Prepare* functions.
-func (e *Extension) PrepareSettlementOperation(method string, args ...interface{}) (*transactTypes.Operation, error) {
-	return e.prepareOperation(
-		SettlementABI(),
-		e.dtaRequestSettlementAddress,
-		method,
-		args...,
-	)
-}
-
-// ============================================================================
 // Special Operations (multi-transaction or complex types)
 // ============================================================================
+// These operations cannot be auto-generated because they either:
+// - Involve multiple transactions (e.g., approve + call)
+// - Have complex struct types that require manual handling
 
 // PrepareRequestSubscriptionWithTokenApprovalOperation prepares a subscription operation with token approval.
 func (e *Extension) PrepareRequestSubscriptionWithTokenApprovalOperation(
@@ -57,7 +30,7 @@ func (e *Extension) PrepareRequestSubscriptionWithTokenApprovalOperation(
 		return nil, fmt.Errorf("prepare token approve: %w", err)
 	}
 
-	calldata, err := ManagementABI().Pack("requestSubscription", fundAdminAddr, fundTokenId, amount)
+	calldata, err := DTARequestManagementABI().Pack("requestSubscription", fundAdminAddr, fundTokenId, amount)
 	if err != nil {
 		e.logger.Error("failed to pack calldata for requestSubscription", "error", err)
 		return nil, fmt.Errorf("pack requestSubscription: %w", err)
@@ -89,7 +62,7 @@ func (e *Extension) PrepareRegisterFundTokenOperation(
 	fundTokenId [32]byte,
 	tokenData FundTokenData,
 ) (*transactTypes.Operation, error) {
-	calldata, err := ManagementABI().Pack("registerFundToken", fundTokenId, tokenData)
+	calldata, err := DTARequestManagementABI().Pack("registerFundToken", fundTokenId, tokenData)
 	if err != nil {
 		e.logger.Error("failed to pack calldata for registerFundToken", "error", err)
 		return nil, fmt.Errorf("pack registerFundToken: %w", err)
@@ -115,70 +88,8 @@ func (e *Extension) PrepareRegisterFundTokenOperation(
 }
 
 // ============================================================================
-// Internal Helpers
+// Internal Helpers (not generated)
 // ============================================================================
-
-// prepareOperation is the internal helper that all operation builders use.
-func (e *Extension) prepareOperation(
-	contractABI *abi.ABI,
-	target common.Address,
-	method string,
-	args ...interface{},
-) (*transactTypes.Operation, error) {
-	calldata, err := contractABI.Pack(method, args...)
-	if err != nil {
-		e.logger.Error("failed to pack calldata", "method", method, "error", err)
-		return nil, fmt.Errorf("pack %s: %w", method, err)
-	}
-
-	opID, err := generateOperationID()
-	if err != nil {
-		e.logger.Error("failed to generate operation ID", "error", err)
-		return nil, fmt.Errorf("generate operation ID: %w", err)
-	}
-
-	return &transactTypes.Operation{
-		ID:      opID,
-		Account: e.accountAddress,
-		Transactions: []transactTypes.Transaction{
-			{
-				To:    target,
-				Value: big.NewInt(0),
-				Data:  calldata,
-			},
-		},
-	}, nil
-}
-
-// generateOperationID creates a cryptographically random operation ID.
-func generateOperationID() (*big.Int, error) {
-	// Generate 16 bytes of random data (128 bits)
-	b := make([]byte, 16)
-	if _, err := rand.Read(b); err != nil {
-		return nil, err
-	}
-	return new(big.Int).SetBytes(b), nil
-}
-
-// prepareManagementOp is a convenience wrapper for DTARequestManagement operations.
-func (e *Extension) prepareManagementOp(method string, args ...interface{}) (*transactTypes.Operation, error) {
-	return e.prepareOperation(
-		ManagementABI(),
-		e.dtaRequestManagementAddress,
-		method,
-		args...,
-	)
-}
-
-// prepareSettlementOp is a convenience wrapper for DTARequestSettlement operations.
-func (e *Extension) prepareSettlementOp(method string, args ...interface{}) (*transactTypes.Operation, error) {
-	return e.prepareOperation(
-		SettlementABI(),
-		e.dtaRequestSettlementAddress,
-		method,
-		args...,
-	)
-}
 
 // prepareTokenApproveTransaction creates an ERC20 approve transaction.
 func (e *Extension) prepareTokenApproveTransaction(

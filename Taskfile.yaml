@@ -31,6 +31,15 @@ tasks:
       - go install github.com/ethereum/go-ethereum/cmd/abigen@latest
       - echo "✅ Tools installed"
 
+  deps:
+    silent: true
+    desc: "Update dependencies"
+    cmds:
+      - echo "📦 Updating deps..."
+      - go mod tidy
+      - go mod download
+      - echo "✅ Dependencies updated"
+
   vendor:
     silent: true
     desc: "Update vendor directory"
@@ -71,17 +80,22 @@ tasks:
   generate:operations:
     silent: true
     desc: "Generate DTA SDK operations, event types, and decoders from ABIs"
+    dir: v1
     cmds:
       - echo "🔧 Generating SDK operations, events, and decoders..."
-      - go run ./v1/gen/main.go
+      - go run ./gen/main.go ./gen/config.go
       - echo "✅ Operations, events, and decoders generated"
     sources:
-      - v1/gen/main.go
-      - v1/abi/*.json
+      - gen/main.go
+      - gen/config.go
+      - abi/*.json
     generates:
-      - v1/dta_operations_gen.go
-      - v1/events_gen.go
-      - v1/decode_gen.go
+      - abi_gen.go
+      - extension_gen.go
+      - operations_gen.go
+      - operations_helpers_gen.go
+      - events_gen.go
+      - decode_gen.go
 
   # -------------------------------------------------------------
   # ---------------- Watcher Workflow Tasks ---------------------

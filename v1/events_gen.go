@@ -15,7 +15,7 @@ var (
 	_ = common.Hash{}
 )
 
-// EventName represents an event name from the DTA contracts.
+// EventName represents an event name from the contracts.
 type EventName string
 
 const (
@@ -38,7 +38,6 @@ const (
 	EventInvalidSubscriptionCrossChainPayment EventName = "InvalidSubscriptionCrossChainPayment"
 	EventMessageFailed                        EventName = "MessageFailed"
 	EventNativeFundsRecovered                 EventName = "NativeFundsRecovered"
-	EventNewRound                             EventName = "NewRound"
 	EventOwnershipTransferred                 EventName = "OwnershipTransferred"
 	EventRedemptionRequested                  EventName = "RedemptionRequested"
 	EventSettlementFailed                     EventName = "SettlementFailed"
@@ -68,7 +67,6 @@ var allEvents = map[string]EventName{
 	string(EventInvalidSubscriptionCrossChainPayment): EventInvalidSubscriptionCrossChainPayment,
 	string(EventMessageFailed):                        EventMessageFailed,
 	string(EventNativeFundsRecovered):                 EventNativeFundsRecovered,
-	string(EventNewRound):                             EventNewRound,
 	string(EventOwnershipTransferred):                 EventOwnershipTransferred,
 	string(EventRedemptionRequested):                  EventRedemptionRequested,
 	string(EventSettlementFailed):                     EventSettlementFailed,
@@ -237,13 +235,6 @@ type MessageFailed struct {
 type NativeFundsRecovered struct {
 	To     common.Address `json:"to"`
 	Amount *big.Int       `json:"amount"`
-}
-
-// NewRound event.
-type NewRound struct {
-	RoundId   *big.Int       `json:"round_id"`
-	StartedBy common.Address `json:"started_by"`
-	StartedAt *big.Int       `json:"started_at"`
 }
 
 // OwnershipTransferred event.

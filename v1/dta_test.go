@@ -292,7 +292,7 @@ func TestDtaV1_PrepareGenericOperations(t *testing.T) {
 	require.NoError(t, err)
 
 	t.Run("management operation", func(t *testing.T) {
-		op, err := ext.PrepareManagementOperation("registerFundAdmin")
+		op, err := ext.PrepareDTARequestManagementOperation("registerFundAdmin")
 		require.NoError(t, err)
 		require.NotNil(t, op)
 		require.Len(t, op.Transactions, 1)
@@ -300,7 +300,7 @@ func TestDtaV1_PrepareGenericOperations(t *testing.T) {
 	})
 
 	t.Run("settlement operation", func(t *testing.T) {
-		op, err := ext.PrepareSettlementOperation("renounceOwnership")
+		op, err := ext.PrepareDTARequestSettlementOperation("renounceOwnership")
 		require.NoError(t, err)
 		require.NotNil(t, op)
 		require.Len(t, op.Transactions, 1)
@@ -308,7 +308,7 @@ func TestDtaV1_PrepareGenericOperations(t *testing.T) {
 	})
 
 	t.Run("invalid method returns error", func(t *testing.T) {
-		_, err := ext.PrepareManagementOperation("nonExistentMethod")
+		_, err := ext.PrepareDTARequestManagementOperation("nonExistentMethod")
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "pack nonExistentMethod")
 	})

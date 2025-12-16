@@ -19,105 +19,105 @@ var (
 
 // PrepareAllowDTAOperation prepares a allowDTA operation on DTARequestSettlement.
 func (e *Extension) PrepareAllowDTAOperation(dtaAddr common.Address, dtaChainSelector uint64, fundAdminAddr common.Address, fundTokenId [32]byte, fundTokenAddr common.Address, mintType TokenMintType, burnType TokenBurnType) (*transactTypes.Operation, error) {
-	return e.prepareSettlementOp("allowDTA", dtaAddr, dtaChainSelector, fundAdminAddr, fundTokenId, fundTokenAddr, uint8(mintType), uint8(burnType))
+	return e.prepareDTARequestSettlementOp("allowDTA", dtaAddr, dtaChainSelector, fundAdminAddr, fundTokenId, fundTokenAddr, uint8(mintType), uint8(burnType))
 }
 
 // PrepareAllowDistributorForTokenOperation prepares a allowDistributorForToken operation on DTARequestManagement.
 func (e *Extension) PrepareAllowDistributorForTokenOperation(fundTokenId [32]byte, distributorAddr common.Address) (*transactTypes.Operation, error) {
-	return e.prepareManagementOp("allowDistributorForToken", fundTokenId, distributorAddr)
+	return e.prepareDTARequestManagementOp("allowDistributorForToken", fundTokenId, distributorAddr)
 }
 
 // PrepareCancelDistributorRequestOperation prepares a cancelDistributorRequest operation on DTARequestManagement.
 func (e *Extension) PrepareCancelDistributorRequestOperation(requestId [32]byte) (*transactTypes.Operation, error) {
-	return e.prepareManagementOp("cancelDistributorRequest", requestId)
+	return e.prepareDTARequestManagementOp("cancelDistributorRequest", requestId)
 }
 
 // PrepareCompleteRequestProcessingOperation prepares a completeRequestProcessing operation on DTARequestSettlement.
 func (e *Extension) PrepareCompleteRequestProcessingOperation(requestId [32]byte, success bool, err []byte) (*transactTypes.Operation, error) {
-	return e.prepareSettlementOp("completeRequestProcessing", requestId, success, err)
+	return e.prepareDTARequestSettlementOp("completeRequestProcessing", requestId, success, err)
 }
 
 // PrepareDisableFundTokenOperation prepares a disableFundToken operation on DTARequestManagement.
 func (e *Extension) PrepareDisableFundTokenOperation(fundTokenId [32]byte) (*transactTypes.Operation, error) {
-	return e.prepareManagementOp("disableFundToken", fundTokenId)
+	return e.prepareDTARequestManagementOp("disableFundToken", fundTokenId)
 }
 
 // PrepareDisallowDTAOperation prepares a disallowDTA operation on DTARequestSettlement.
 func (e *Extension) PrepareDisallowDTAOperation(dtaAddr common.Address, dtaChainSelector uint64, fundAdminAddr common.Address, fundTokenId [32]byte) (*transactTypes.Operation, error) {
-	return e.prepareSettlementOp("disallowDTA", dtaAddr, dtaChainSelector, fundAdminAddr, fundTokenId)
+	return e.prepareDTARequestSettlementOp("disallowDTA", dtaAddr, dtaChainSelector, fundAdminAddr, fundTokenId)
 }
 
 // PrepareDisallowDistributorForTokenOperation prepares a disallowDistributorForToken operation on DTARequestManagement.
 func (e *Extension) PrepareDisallowDistributorForTokenOperation(fundTokenId [32]byte, distributorAddr common.Address) (*transactTypes.Operation, error) {
-	return e.prepareManagementOp("disallowDistributorForToken", fundTokenId, distributorAddr)
+	return e.prepareDTARequestManagementOp("disallowDistributorForToken", fundTokenId, distributorAddr)
 }
 
 // PrepareEnableFundTokenOperation prepares a enableFundToken operation on DTARequestManagement.
 func (e *Extension) PrepareEnableFundTokenOperation(fundTokenId [32]byte) (*transactTypes.Operation, error) {
-	return e.prepareManagementOp("enableFundToken", fundTokenId)
+	return e.prepareDTARequestManagementOp("enableFundToken", fundTokenId)
 }
 
 // PrepareForceAllowDistributorForTokenOperation prepares a forceAllowDistributorForToken operation on DTARequestManagement.
 func (e *Extension) PrepareForceAllowDistributorForTokenOperation(fundTokenId [32]byte, distributorAddr common.Address) (*transactTypes.Operation, error) {
-	return e.prepareManagementOp("forceAllowDistributorForToken", fundTokenId, distributorAddr)
+	return e.prepareDTARequestManagementOp("forceAllowDistributorForToken", fundTokenId, distributorAddr)
 }
 
 // PrepareProcessDistributorRequestOperation prepares a processDistributorRequest operation on DTARequestManagement.
 func (e *Extension) PrepareProcessDistributorRequestOperation(requestId [32]byte) (*transactTypes.Operation, error) {
-	return e.prepareManagementOp("processDistributorRequest", requestId)
+	return e.prepareDTARequestManagementOp("processDistributorRequest", requestId)
 }
 
 // PrepareRegisterDistributorOperation prepares a registerDistributor operation on DTARequestManagement.
 func (e *Extension) PrepareRegisterDistributorOperation(distributorWalletAddr common.Address) (*transactTypes.Operation, error) {
-	return e.prepareManagementOp("registerDistributor", distributorWalletAddr)
+	return e.prepareDTARequestManagementOp("registerDistributor", distributorWalletAddr)
 }
 
 // PrepareRegisterFundAdminOperation prepares a registerFundAdmin operation on DTARequestManagement.
 func (e *Extension) PrepareRegisterFundAdminOperation() (*transactTypes.Operation, error) {
-	return e.prepareManagementOp("registerFundAdmin")
+	return e.prepareDTARequestManagementOp("registerFundAdmin")
 }
 
 // PrepareRenounceDTARequestSettlementOwnershipOperation prepares a renounceOwnership operation on DTARequestSettlement.
 func (e *Extension) PrepareRenounceDTARequestSettlementOwnershipOperation() (*transactTypes.Operation, error) {
-	return e.prepareSettlementOp("renounceOwnership")
+	return e.prepareDTARequestSettlementOp("renounceOwnership")
 }
 
 // PrepareRequestRedemptionOperation prepares a requestRedemption operation on DTARequestManagement.
 func (e *Extension) PrepareRequestRedemptionOperation(fundAdminAddr common.Address, fundTokenId [32]byte, shares *big.Int) (*transactTypes.Operation, error) {
-	return e.prepareManagementOp("requestRedemption", fundAdminAddr, fundTokenId, shares)
+	return e.prepareDTARequestManagementOp("requestRedemption", fundAdminAddr, fundTokenId, shares)
 }
 
 // PrepareRequestSubscriptionOperation prepares a requestSubscription operation on DTARequestManagement.
 func (e *Extension) PrepareRequestSubscriptionOperation(fundAdminAddr common.Address, fundTokenId [32]byte, amount *big.Int) (*transactTypes.Operation, error) {
-	return e.prepareManagementOp("requestSubscription", fundAdminAddr, fundTokenId, amount)
+	return e.prepareDTARequestManagementOp("requestSubscription", fundAdminAddr, fundTokenId, amount)
 }
 
 // PrepareSetManagementCCIPGasLimitOperation prepares a setCCIPGasLimit operation on DTARequestManagement.
 func (e *Extension) PrepareSetManagementCCIPGasLimitOperation(gasLimit *big.Int) (*transactTypes.Operation, error) {
-	return e.prepareManagementOp("setCCIPGasLimit", gasLimit)
+	return e.prepareDTARequestManagementOp("setCCIPGasLimit", gasLimit)
 }
 
 // PrepareSetSettlementCCIPGasLimitOperation prepares a setCCIPGasLimit operation on DTARequestSettlement.
 func (e *Extension) PrepareSetSettlementCCIPGasLimitOperation(gasLimit *big.Int) (*transactTypes.Operation, error) {
-	return e.prepareSettlementOp("setCCIPGasLimit", gasLimit)
+	return e.prepareDTARequestSettlementOp("setCCIPGasLimit", gasLimit)
 }
 
 // PrepareTransferDTARequestSettlementOwnershipOperation prepares a transferOwnership operation on DTARequestSettlement.
 func (e *Extension) PrepareTransferDTARequestSettlementOwnershipOperation(newOwner common.Address) (*transactTypes.Operation, error) {
-	return e.prepareSettlementOp("transferOwnership", newOwner)
+	return e.prepareDTARequestSettlementOp("transferOwnership", newOwner)
 }
 
 // PrepareVerifyDistributorWalletOperation prepares a verifyDistributorWallet operation on DTARequestManagement.
 func (e *Extension) PrepareVerifyDistributorWalletOperation(distributorAddr common.Address) (*transactTypes.Operation, error) {
-	return e.prepareManagementOp("verifyDistributorWallet", distributorAddr)
+	return e.prepareDTARequestManagementOp("verifyDistributorWallet", distributorAddr)
 }
 
 // PrepareWithdrawManagementTokensOperation prepares a withdrawTokens operation on DTARequestManagement.
 func (e *Extension) PrepareWithdrawManagementTokensOperation(token common.Address, recipient common.Address, amount *big.Int) (*transactTypes.Operation, error) {
-	return e.prepareManagementOp("withdrawTokens", token, recipient, amount)
+	return e.prepareDTARequestManagementOp("withdrawTokens", token, recipient, amount)
 }
 
 // PrepareWithdrawSettlementTokensOperation prepares a withdrawTokens operation on DTARequestSettlement.
 func (e *Extension) PrepareWithdrawSettlementTokensOperation(token common.Address, recipient common.Address, amount *big.Int) (*transactTypes.Operation, error) {
-	return e.prepareSettlementOp("withdrawTokens", token, recipient, amount)
+	return e.prepareDTARequestSettlementOp("withdrawTokens", token, recipient, amount)
 }

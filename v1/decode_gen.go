@@ -42,7 +42,6 @@ var eventDecoders = map[EventName]eventDecoder{
 	EventInvalidSubscriptionCrossChainPayment: decodeInvalidSubscriptionCrossChainPayment,
 	EventMessageFailed:                        decodeMessageFailed,
 	EventNativeFundsRecovered:                 decodeNativeFundsRecovered,
-	EventNewRound:                             decodeNewRound,
 	EventOwnershipTransferred:                 decodeOwnershipTransferred,
 	EventRedemptionRequested:                  decodeRedemptionRequested,
 	EventSettlementFailed:                     decodeSettlementFailed,
@@ -312,22 +311,6 @@ func decodeNativeFundsRecovered(params map[string]string, _ string) (ConcreteEve
 	return &NativeFundsRecovered{
 		To:     common.HexToAddress(params["to"]),
 		Amount: amount,
-	}, nil
-}
-
-func decodeNewRound(params map[string]string, _ string) (ConcreteEvent, error) {
-	roundId, err := parsing.ScientificNotationToBigInt(params["round_id"])
-	if err != nil {
-		return nil, fmt.Errorf("parse round_id %q: %w", params["round_id"], err)
-	}
-	startedAt, err := parsing.ScientificNotationToBigInt(params["started_at"])
-	if err != nil {
-		return nil, fmt.Errorf("parse started_at %q: %w", params["started_at"], err)
-	}
-	return &NewRound{
-		RoundId:   roundId,
-		StartedBy: common.HexToAddress(params["started_by"]),
-		StartedAt: startedAt,
 	}, nil
 }
 

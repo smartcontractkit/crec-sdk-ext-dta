@@ -1,0 +1,32 @@
+services:
+  mock-server-init:
+    image: alpine:latest
+    volumes:
+      - mock-config:/config
+    command: >
+      sh -c 'echo "[{\"httpRequest\":{\"path\":\"/.*\"},\"httpResponse\":{\"statusCode\":202,\"body\":\"OK\"}}]" > /config/mockserver-init.json'
+    restart: "no"
+
+  # This is a simple mock server that always returns 202 Accepted for any request.
+  mock-server:
+    image: mockserver/mockserver:latest
+    container_name: mock-server
+    platform: linux/amd64
+    depends_on:
+      - mock-server-init
+    ports:
+      - "80:1080"
+      - "443:1080"
+      - "8080:1080"
+      - "8443:1080"
+      - "1080:1080"
+    environment:
+      - MOCKSERVER_LOG_LEVEL=INFO
+      - MOCKSERVER_SERVER_PORT=1080
+      - MOCKSERVER_INITIALIZATION_JSON_PATH=/config/mockserver-init.json
+    volumes:
+      - mock-config:/config
+    restart: unless-stopped
+
+volumes:
+  mock-config:

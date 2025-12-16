@@ -1,0 +1,281 @@
+version: "3"
+
+# =============================================================================
+# CREC SDK Extension: DTA - Taskfile
+# =============================================================================
+# Code generation, testing, and watcher workflow management tasks.
+
+tasks:
+  default:
+    silent: true
+    desc: "List all available tasks"
+    cmds:
+      - task --list
+
+  # -------------------------------------------------------------
+  # ---------------- SDK Development Tasks ----------------------
+  # -------------------------------------------------------------
+
+  test:
+    silent: true
+    desc: "Run all tests"
+    cmds:
+      - go test ./...
+
+  tools:
+    silent: true
+    desc: "Install required code generation tools"
+    cmds:
+      - echo "📦 Installing code generation tools..."
+      - go install github.com/atombender/go-jsonschema@latest
+      - go install github.com/ethereum/go-ethereum/cmd/abigen@latest
+      - echo "✅ Tools installed"
+
+  deps:
+    silent: true
+    desc: "Update dependencies"
+    cmds:
+      - echo "📦 Updating deps..."
+      - go mod tidy
+      - go mod download
+      - echo "✅ Dependencies updated"
+
+  vendor:
+    silent: true
+    desc: "Update vendor directory"
+    cmds:
+      - echo "📦 Updating vendor directory..."
+      - go mod tidy
+      - go mod download
+      - go mod vendor
+      - echo "✅ Vendor directory updated"
+
+  # -------------------------------------------------------------
+  # ---------------- Code Generation Tasks ----------------------
+  # -------------------------------------------------------------
+
+  generate:
+    silent: true
+    desc: "Generate all code (bindings, operations, event types)"
+    cmds:
+      - task: generate:bindings
+      - task: generate:operations
+      - echo "✅ All DTA SDK code generation complete"
+
+  generate:bindings:
+    silent: true
+    desc: "Generate Go bindings from ABIs in v1/abi/"
+    cmds:
+      - echo "🔧 Generating Go bindings from v1/abi/..."
+      - mkdir -p v1/bindings/dtarm v1/bindings/dtars
+      - abigen --abi v1/abi/DTARequestManagementU.abi.json --pkg dtarm --out v1/bindings/dtarm/dtarm.gen.go
+      - abigen --abi v1/abi/DTARequestSettlementU.abi.json --pkg dtars --out v1/bindings/dtars/dtars.gen.go
+      - echo "✅ Bindings generated"
+    sources:
+      - v1/abi/*.json
+    generates:
+      - v1/bindings/dtarm/dtarm.gen.go
+      - v1/bindings/dtars/dtars.gen.go
+
+  generate:operations:
+    silent: true
+    desc: "Generate DTA SDK operations, event types, and decoders from ABIs"
+    dir: v1
+    cmds:
+      - echo "🔧 Generating SDK operations, events, and decoders..."
+      - go run ./gen/main.go ./gen/config.go
+      - echo "✅ Operations, events, and decoders generated"
+    sources:
+      - gen/main.go
+      - gen/config.go
+      - abi/*.json
+    generates:
+      - abi_gen.go
+      - extension_gen.go
+      - operations_gen.go
+      - operations_helpers_gen.go
+      - events_gen.go
+      - decode_gen.go
+
+  # -------------------------------------------------------------
+  # ---------------- Watcher Workflow Tasks ---------------------
+  # -------------------------------------------------------------
+  # All watcher tasks accept VERSION var (default: v1)
+  # Usage: task watcher:simulate VERSION=v2 TX_HASH=0x...
+
+  watcher:config:
+    desc: "Render watcher config.yaml and workflow.yaml via gomplate"
+    silent: true
+    vars:
+      VERSION: '{{ .VERSION | default "v1" }}'
+      VALUES_FILE: '{{ .VALUES_FILE | default "values/values.yaml" }}'
+      WF_NAME_OVERRIDE: '{{ .WF_NAME_OVERRIDE | default "" }}'
+    cmds:
+      - |
+        VALUES_PATH="{{ .VERSION }}/watcher/{{ .VALUES_FILE }}"
+        if [ ! -f "$VALUES_PATH" ]; then
+          echo "❌ values file not found: $VALUES_PATH"
+          exit 1
+        fi
+
+        export WF_NAME_OVERRIDE="{{ .WF_NAME_OVERRIDE }}"
+
+        if [ -f "{{ .VERSION }}/watcher/config.tmpl" ]; then
+          gomplate \
+            -d "config=$VALUES_PATH" \
+            -f {{ .VERSION }}/watcher/config.tmpl \
+            -o {{ .VERSION }}/watcher/config.yaml
+          echo "✅ config.yaml generated"
+        fi
+
+        if [ -f "{{ .VERSION }}/watcher/workflow.tmpl" ]; then
+          gomplate \
+            -d "config=$VALUES_PATH" \
+            -f {{ .VERSION }}/watcher/workflow.tmpl \
+            -o {{ .VERSION }}/watcher/workflow.yaml
+          echo "✅ workflow.yaml generated"
+        fi
+
+  watcher:simulate:
+    # Example Usage:
+    # task watcher:simulate VERSION=v1 TX_HASH=0x4b6d4a1f62f1938c91f5aa18b6546261810c6b19201fda5239fab0ed4420e2ed EVENT_INDEX=0 TRIGGER_INDEX=0
+    desc: "Simulate watcher workflow with CRE CLI"
+    silent: true
+    deps: [mock:start]
+    vars:
+      VERSION: '{{ .VERSION | default "v1" }}'
+      TARGET: '{{ .TARGET | default "local-simulation" }}'
+      TX_HASH: '{{ .TX_HASH }}'
+      EVENT_INDEX: '{{ .EVENT_INDEX | default "0" }}'
+      TRIGGER_INDEX: '{{ .TRIGGER_INDEX | default "0" }}'
+    cmds:
+      - |
+        if [ -z "{{ .TX_HASH }}" ]; then
+          echo "❌ TX_HASH required. Usage: task watcher:simulate VERSION=v1 TX_HASH=0x..."
+          exit 1
+        fi
+        cd {{ .VERSION }}/watcher && \
+        cre workflow simulate watcher-dta-{{ .VERSION }} \
+          --target {{ .TARGET }} \
+          --evm-tx-hash {{ .TX_HASH }} \
+          --evm-event-index {{ .EVENT_INDEX }} \
+          --non-interactive \
+          --trigger-index {{ .TRIGGER_INDEX }}
+
+  watcher:secrets:
+    desc: "Upload watcher secrets to CRE"
+    silent: true
+    vars:
+      VERSION: '{{ .VERSION | default "v1" }}'
+      CRE_TARGET: '{{ .CRE_TARGET | default "staging" }}'
+    cmds:
+      - cre secrets create "$(realpath ./{{ .VERSION }}/watcher/secrets.yaml)" --target {{ .CRE_TARGET }} -R "$(realpath ./{{ .VERSION }}/watcher)"
+
+  watcher:deploy:
+    desc: "Deploy watcher workflow to CRE"
+    silent: true
+    deps: [watcher:check:cre-api-key]
+    vars:
+      VERSION: '{{ .VERSION | default "v1" }}'
+      CRE_TARGET: '{{ .CRE_TARGET | default "staging" }}'
+      OWNER_LABEL: '{{ .OWNER_LABEL | default "crec-sdk-ext-dta" }}'
+    cmds:
+      - |
+        cd {{ .VERSION }}/watcher && \
+        cre workflow deploy watcher --target {{ .CRE_TARGET }} --owner-label {{ .OWNER_LABEL }} --yes
+
+  watcher:release:
+    desc: "Config and deploy watcher to CRE"
+    silent: true
+    vars:
+      VERSION: '{{ .VERSION | default "v1" }}'
+      VALUES_FILE: '{{ .VALUES_FILE | default "values/values.yaml" }}'
+      WF_NAME_OVERRIDE: '{{ .WF_NAME_OVERRIDE | default "" }}'
+    cmds:
+      - task: watcher:config
+        vars:
+          VERSION: "{{ .VERSION }}"
+          VALUES_FILE: "{{ .VALUES_FILE }}"
+          WF_NAME_OVERRIDE: "{{ .WF_NAME_OVERRIDE }}"
+      - task: watcher:deploy
+        vars:
+          VERSION: "{{ .VERSION }}"
+
+  watcher:clean:
+    desc: "Clean watcher workflow artifacts"
+    silent: true
+    vars:
+      VERSION: '{{ .VERSION | default "v1" }}'
+    cmds:
+      - |
+        cd {{ .VERSION }}/watcher && \
+        rm -f binary.wasm.br.b64 binary.wasm.br config.yaml workflow.yaml .bin_url .cfg_url cre.yaml upload.log test.state.yaml
+
+  watcher:check:cre-api-key:
+    desc: "Check if CRE_API_KEY environment variable is set"
+    internal: true
+    silent: true
+    cmds:
+      - |
+        if [ -z "${CRE_API_KEY:-}" ]; then
+          echo "⚠️  WARNING: CRE_API_KEY environment variable is not set"
+          echo "   Workflow deployment requires CRE_API_KEY (or 'cre login') to authenticate with CRE."
+          exit 1
+        fi
+
+  watcher:check:cre-eth-private-key:
+    desc: "Check if CRE_ETH_PRIVATE_KEY environment variable is set"
+    internal: true
+    silent: true
+    cmds:
+      - |
+        if [ -z "${CRE_ETH_PRIVATE_KEY:-}" ]; then
+          echo "❌ CRE_ETH_PRIVATE_KEY environment variable is not set"
+          exit 1
+        fi
+
+  watcher:account:link-key:
+    desc: "Link wallet address to CRE account"
+    silent: true
+    deps: [watcher:check:cre-api-key, watcher:check:cre-eth-private-key]
+    vars:
+      CRE_TARGET: '{{ .CRE_TARGET | default "staging" }}'
+      OWNER_LABEL: '{{ .OWNER_LABEL | default "crec-sdk-ext-dta" }}'
+    cmds:
+      - cre account link-key --target {{ .CRE_TARGET }} --owner-label "{{ .OWNER_LABEL }}"
+
+  # -------------------------------------------------------------
+  # ---------------- Mock Server Tasks --------------------------
+  # -------------------------------------------------------------
+  # Mock server for local workflow simulation/testing
+
+  mock:start:
+    desc: "Start mock server for workflow testing"
+    silent: true
+    cmds:
+      - |
+        if docker ps --filter "name=mock-server" --filter "status=running" --no-trunc 2>/dev/null | grep -q 'mock-server'; then
+          echo "ℹ️  Mock server is already running"
+        else
+          docker rm -f mock-server 2>/dev/null || true
+          docker-compose -f mocks/docker-compose.mock.yml up -d
+        fi
+
+  mock:stop:
+    desc: "Stop mock server"
+    silent: true
+    cmds:
+      - docker-compose -f mocks/docker-compose.mock.yml down
+
+  mock:logs:
+    desc: "View mock server logs"
+    silent: true
+    cmds:
+      - docker-compose -f mocks/docker-compose.mock.yml logs -f
+
+  mock:restart:
+    desc: "Restart mock server"
+    silent: true
+    cmds:
+      - task: mock:stop
+      - task: mock:start

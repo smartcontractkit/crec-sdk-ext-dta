@@ -20,14 +20,23 @@ profile.cov
 # Dependency directories (remove the comment below to include it)
 vendor/
 
+# Taskfile
+.task/
+
 # Go workspace file
 go.work
 go.work.sum
 
 # env file
 .env
+.envrc
 
 # Editor/IDE
 .idea/
 .vscode/
 .cursor/
+
+# Generated workflow files
+*/watcher/config.yaml
+*/watcher/workflow.yaml
+*/watcher/binary*

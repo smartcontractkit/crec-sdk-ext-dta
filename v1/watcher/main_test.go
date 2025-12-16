@@ -17,26 +17,26 @@ import (
 	evmmock "github.com/smartcontractkit/cre-sdk-go/capabilities/blockchain/evm/mock"
 	httpcap "github.com/smartcontractkit/cre-sdk-go/capabilities/networking/http"
 	httpmock "github.com/smartcontractkit/cre-sdk-go/capabilities/networking/http/mock"
-	wfcommon "github.com/smartcontractkit/crec-courier-service/workflows/common"
+	workflows "github.com/smartcontractkit/cre-workflow-utils"
 	wf "github.com/smartcontractkit/crec-sdk-ext-dta/v1/watcher/handler"
 )
 
 func TestWatcherV1_DTA_SimpleFlow_Post(t *testing.T) {
-	rt := wfcommon.PrepareTestingRuntime(t)
+	rt := workflows.PrepareTestingRuntime(t)
 
-	cfg := &wfcommon.Config{
+	cfg := &workflows.Config{
 		Network:       "evm",
 		ChainID:       "31337",
 		ChainSelector: "3379446385462418246",
 		Service:       "dta",
 		CourierURL:    "http://example.com",
 		ApiKeySecret:  "courier",
-		DetectEventTriggerConfig: wfcommon.DetectEventTriggerConfig{
+		DetectEventTriggerConfig: workflows.DetectEventTriggerConfig{
 			ContractName:      "TransparentUpgradeableProxy",
 			ContractAddress:   "0x84eA74d481Ee0A5332c457a4d796187F6Ba67fEB",
 			ContractEventName: "FundAdminRegistered",
-			ContractReaderConfig: wfcommon.ContractReaderConfig{
-				Contracts: map[string]wfcommon.ContractDef{
+			ContractReaderConfig: workflows.ContractReaderConfig{
+				Contracts: map[string]workflows.ContractDef{
 					"TransparentUpgradeableProxy": {
 						ContractABI: `[{"type":"event","name":"FundAdminRegistered","inputs":[{"name":"fundAdminAddr","type":"address","indexed":false,"internalType":"address"}],"anonymous":false}]`,
 					},

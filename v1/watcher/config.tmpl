@@ -5,6 +5,7 @@ workflowEventOtelEndpoint: ""
 courierURL: "{{ ((datasource "config").courierUrl) }}"
 service: "{{ ((datasource "config").service) }}"
 watcherID: "{{ ((datasource "config").watcherID) }}"
+workflowName: "{{ ((datasource "config").workflowName) }}"
 apiKeySecret: "courier"
 detectEventTriggerConfig:
   contractName: "{{ ((datasource "config").contractName) }}"

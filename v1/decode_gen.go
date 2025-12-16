@@ -7,7 +7,7 @@ import (
 	"strconv"
 
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/smartcontractkit/crec-sdk-ext-dta/parsing"
+	"github.com/smartcontractkit/crec-sdk/parsing"
 )
 
 // Ensure imports are used

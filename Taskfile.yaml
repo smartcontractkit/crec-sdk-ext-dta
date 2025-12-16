@@ -195,7 +195,7 @@ tasks:
     cmds:
       - |
         cd {{ .VERSION }}/watcher && \
-        rm -f binary.wasm.br config.yaml workflow.yaml .bin_url .cfg_url cre.yaml upload.log test.state.yaml
+        rm -f binary.wasm.br.b64 binary.wasm.br config.yaml workflow.yaml .bin_url .cfg_url cre.yaml upload.log test.state.yaml
 
   watcher:check:cre-api-key:
     desc: "Check if CRE_API_KEY environment variable is set"

@@ -27,12 +27,16 @@ func (e DecodedEvent) EventName() EventName {
 
 // DecodeFromEvent extracts the WatcherEventPayload from an apiClient.Event and decodes
 // the ConcreteEvent based on the event type.
-func DecodeFromEvent(_ context.Context, event apiClient.Event) (DecodedEvent, error) {
+func DecodeFromEvent(ctx context.Context, event apiClient.Event) (DecodedEvent, error) {
 	payload, err := event.Payload.AsWatcherEventPayload()
 	if err != nil {
 		return DecodedEvent{}, fmt.Errorf("extract watcher payload: %w", err)
 	}
 
+	return DecodeFromWatcherEventPayload(ctx, payload)
+}
+
+func DecodeFromWatcherEventPayload(_ context.Context, payload apiClient.WatcherEventPayload) (DecodedEvent, error) {
 	// Convert Data map to string params for decoders
 	params := make(map[string]string, len(payload.Event.Data))
 	for k, v := range payload.Event.Data {

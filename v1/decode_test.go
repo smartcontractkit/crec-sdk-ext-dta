@@ -256,7 +256,7 @@ func TestDecodeFromEvent_DecodedEventFields(t *testing.T) {
 	require.Equal(t, payload.Event.EventName, result.Event.EventName)
 	require.Equal(t, payload.Event.TopicHash, result.Event.TopicHash)
 	require.Equal(t, payload.Transaction.Hash, result.Transaction.Hash)
-	require.Equal(t, payload.Event.Timestamp, result.Event.Timestamp)
+	require.True(t, payload.Event.Timestamp.Equal(result.Event.Timestamp), "timestamps should represent the same instant")
 }
 
 // TestEventPayloadRoundTrip verifies that event payloads can be marshalled and unmarshalled

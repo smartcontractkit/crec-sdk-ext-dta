@@ -2,35 +2,83 @@ package v1_test
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"math/big"
 	"testing"
-	"time"
 
 	"github.com/ethereum/go-ethereum/common"
+	workflows "github.com/smartcontractkit/cre-workflow-utils"
 	apiClient "github.com/smartcontractkit/crec-api-go/client"
 	v1 "github.com/smartcontractkit/crec-sdk-ext-dta/v1"
 	"github.com/stretchr/testify/require"
 )
 
 // buildWatcherEventPayload creates a WatcherEventPayload with the given data for testing
-func buildWatcherEventPayload(eventName string, data map[string]interface{}) apiClient.WatcherEventPayload {
-	return apiClient.WatcherEventPayload{
-		Address:       "0x1234567890123456789012345678901234567890",
-		ChainSelector: "1",
-		Event: apiClient.WatcherEvent{
-			Data:      data,
+func buildWatcherEventPayload(eventName string, data map[string]any) apiClient.WatcherEventPayload {
+	referenceData := workflows.ReferenceData{
+		OnChain: []workflows.OnChainReferenceData{
+			{
+				Source: workflows.OnChainReferenceDataSource{
+					ContractAddress:           "0x1234567890123456789012345678901234567890",
+					ContractFunctionSignature: v1.DTARequestManagementABI().Methods["getFundToken"].Sig,
+					CallData:                  "0x1234567890123456789012345678901234567890",
+					Block:                     "latest",
+				},
+				Data: map[string]any{
+					"enabled": true,
+					"fund_token_data": v1.FundTokenData{
+						FundTokenAddr:                 common.HexToAddress("0x1234567890123456789012345678901234567890"),
+						NavFeedDecimals:               18,
+						PurchaseTokenRoundingDecimals: 18,
+						PurchaseTokenDecimals:         18,
+						FundRoundingDecimals:          18,
+						FundTokenDecimals:             18,
+						RequestsPerDay:                10,
+						NavAddr:                       common.HexToAddress("0x1234567890123456789012345678901234567890"),
+						TokenChainSelector:            1,
+						DtaRequestSettlementAddr:      common.HexToAddress("0x1234567890123456789012345678901234567890"),
+						TimezoneOffsetSecs:            big.NewInt(0),
+						NavTTL:                        big.NewInt(0),
+						PaymentInfo: v1.DTAPayment{
+							OffChainPaymentCurrency: 147,
+							PaymentTokenSourceAddr:  common.HexToAddress("0x0000000000000000000000000000000000000000"),
+							PaymentTokenDestAddr:    common.HexToAddress("0x0000000000000000000000000000000000000000"),
+						},
+					},
+				},
+			},
+		},
+	}
+	refDataBytes, err := json.Marshal(referenceData)
+	if err != nil {
+		panic(err)
+	}
+	refDataTypeAndValue := workflows.TypeAndValue{
+		Type:  workflows.RawMessageTypeReferenceData,
+		Value: json.RawMessage(refDataBytes),
+	}
+	event := workflows.VerifiableEvent{
+		Event: workflows.Event{
 			EventName: eventName,
-			LogIndex:  0,
-			Timestamp: time.Unix(1234567890, 0),
-			TopicHash: "0xabcdef",
+			Args:      data,
 		},
-		Transaction: apiClient.EventTransaction{
-			Hash:      "0xdeadbeef",
-			Timestamp: 1234567890,
+		Trigger: workflows.Trigger{
+			TxHash: "0xdeadbeef",
 		},
-		Type:      apiClient.WatcherEventPayloadTypeWatcherEvent,
-		WatcherId: "test-watcher",
+		ReferenceData: &refDataTypeAndValue,
+	}
+	eventBytes, err := json.Marshal(event)
+	if err != nil {
+		panic(err)
+	}
+	return apiClient.WatcherEventPayload{
+		Address:         "0x1234567890123456789012345678901234567890",
+		ChainSelector:   "1",
+		Name:            eventName,
+		VerifiableEvent: base64.StdEncoding.EncodeToString(eventBytes),
+		Type:            apiClient.WatcherEvent,
+		WatcherId:       "test-watcher",
 	}
 }
 
@@ -40,7 +88,7 @@ func buildEvent(t *testing.T, payload apiClient.WatcherEventPayload) apiClient.E
 
 	var event apiClient.Event
 	err := event.Payload.FromWatcherEventPayload(payload)
-					require.NoError(t, err)
+	require.NoError(t, err)
 	return event
 }
 
@@ -64,10 +112,10 @@ func TestDecodeFromEvent_DistributorRegistered(t *testing.T) {
 
 func TestDecodeFromEvent_DistributorRequestProcessed(t *testing.T) {
 	data := map[string]interface{}{
-				"request_id": common.HexToHash("0x01").Hex(),
-				"shares":     "12345678901234567890",
-				"status":     "7",
-				"error":      "some-bytes",
+		"request_id": common.HexToHash("0x01").Hex(),
+		"shares":     "12345678901234567890",
+		"status":     "7",
+		"error":      "some-bytes",
 	}
 
 	payload := buildWatcherEventPayload(v1.EventDistributorRequestProcessed.String(), data)
@@ -90,18 +138,18 @@ func TestDecodeFromEvent_DistributorRequestProcessed(t *testing.T) {
 
 func TestDecodeFromEvent_SubscriptionRequested(t *testing.T) {
 	data := map[string]interface{}{
-				"fund_token_id":    common.HexToHash("0x02").Hex(),
-				"distributor_addr": common.HexToAddress("0x00000000000000000000000000000000000000aa").Hex(),
-				"request_id":       common.HexToHash("0x03").Hex(),
-				"amount":           "42",
-				"created_at":       "12345",
+		"fund_token_id":    common.HexToHash("0x02").Hex(),
+		"distributor_addr": common.HexToAddress("0x00000000000000000000000000000000000000aa").Hex(),
+		"request_id":       common.HexToHash("0x03").Hex(),
+		"amount":           "42",
+		"created_at":       "12345",
 	}
 
 	payload := buildWatcherEventPayload(v1.EventSubscriptionRequested.String(), data)
 	event := buildEvent(t, payload)
 
 	result, err := v1.DecodeFromEvent(context.Background(), event)
-			require.NoError(t, err)
+	require.NoError(t, err)
 
 	require.Equal(t, v1.EventSubscriptionRequested, result.EventName())
 
@@ -162,12 +210,12 @@ func TestDecodeFromEvent_ScientificNotation(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			data := map[string]interface{}{
-					"fund_token_id":    common.HexToHash("0x02").Hex(),
+				"fund_token_id":    common.HexToHash("0x02").Hex(),
 				"distributor_addr": common.HexToAddress("0xaa").Hex(),
-					"request_id":       common.HexToHash("0x03").Hex(),
-					"amount":           tt.amountValue,
-					"created_at":       "12345",
-				}
+				"request_id":       common.HexToHash("0x03").Hex(),
+				"amount":           tt.amountValue,
+				"created_at":       "12345",
+			}
 
 			payload := buildWatcherEventPayload(tt.eventType, data)
 			event := buildEvent(t, payload)
@@ -211,7 +259,7 @@ func TestDecodeFromEvent_InvalidPayload(t *testing.T) {
 	event.Payload = apiClient.Event_Payload{}
 
 	_, err := v1.DecodeFromEvent(context.Background(), event)
-				require.Error(t, err)
+	require.Error(t, err)
 }
 
 func TestDecodeFromEvent_RedemptionRequested(t *testing.T) {
@@ -253,10 +301,9 @@ func TestDecodeFromEvent_DecodedEventFields(t *testing.T) {
 	// Verify WatcherEventPayload fields are accessible directly
 	require.Equal(t, "1", result.ChainSelector)
 	require.Equal(t, payload.Address, result.Address)
-	require.Equal(t, payload.Event.EventName, result.Event.EventName)
-	require.Equal(t, payload.Event.TopicHash, result.Event.TopicHash)
-	require.Equal(t, payload.Transaction.Hash, result.Transaction.Hash)
-	require.Equal(t, payload.Event.Timestamp, result.Event.Timestamp)
+	require.Equal(t, payload.Name, result.Name)
+	require.Equal(t, payload.Domain, result.Domain)
+	require.Equal(t, payload.WatcherId, result.WatcherId)
 }
 
 // TestEventPayloadRoundTrip verifies that event payloads can be marshalled and unmarshalled
@@ -276,6 +323,6 @@ func TestEventPayloadRoundTrip(t *testing.T) {
 	err = json.Unmarshal(jsonBytes, &decodedPayload)
 	require.NoError(t, err)
 
-	require.Equal(t, originalPayload.Event.EventName, decodedPayload.Event.EventName)
+	require.Equal(t, originalPayload.Name, decodedPayload.Name)
 	require.Equal(t, originalPayload.Address, decodedPayload.Address)
 }

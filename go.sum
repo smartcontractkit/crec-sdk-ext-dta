@@ -186,10 +186,10 @@ github.com/smartcontractkit/cre-sdk-go/capabilities/blockchain/evm v0.10.0 h1:G0
 github.com/smartcontractkit/cre-sdk-go/capabilities/blockchain/evm v0.10.0/go.mod h1:VVJ4mvA7wOU1Ic5b/vTaBMHEUysyxd0gdPPXkAu8CmY=
 github.com/smartcontractkit/cre-sdk-go/capabilities/networking/http v0.10.0 h1:nP6PVWrrTIICvjwQuFitsQecQWbqpPaYzaTEjx92eTQ=
 github.com/smartcontractkit/cre-sdk-go/capabilities/networking/http v0.10.0/go.mod h1:M83m3FsM1uqVu06OO58mKUSZJjjH8OGJsmvFpFlRDxI=
-github.com/smartcontractkit/cre-workflow-utils v0.0.1-alpha h1:z9jcyLEn1LAn2O+2JJ/ztryH22haMhNGvWgZsh189+8=
-github.com/smartcontractkit/cre-workflow-utils v0.0.1-alpha/go.mod h1:MbkTlU1Y9YRJqsj4Na0Oavi4wVYEs+9o4f+xosnRDUs=
-github.com/smartcontractkit/crec-api-go v0.3.7-0.20251209174022-0ae3d2b8fe58 h1:BL5P1pp6aEGG01Q4sj5x0RA1JLhKtamqhImNhqzCVdM=
-github.com/smartcontractkit/crec-api-go v0.3.7-0.20251209174022-0ae3d2b8fe58/go.mod h1:TuDZiMoStNQBv3HYA5pqpwPyecbMh8p5momO4b1A9Eg=
+github.com/smartcontractkit/cre-workflow-utils v0.0.5-0.20260105233120-af27886d97a3 h1:Y+3U+T7NKE+ueE2IR46EFUJmyjfKVoWOaSlKMyOz/+k=
+github.com/smartcontractkit/cre-workflow-utils v0.0.5-0.20260105233120-af27886d97a3/go.mod h1:Um2NM48CKrbCLRY9RSeU3TxLbJUW3IdZgRSmjtUpuYI=
+github.com/smartcontractkit/crec-api-go v0.3.8-0.20260107184516-f2cde220ce07 h1:k0LLivoOqmumYaOgmNi+k+oxc0p0IA93RsQVfoG7uLA=
+github.com/smartcontractkit/crec-api-go v0.3.8-0.20260107184516-f2cde220ce07/go.mod h1:TuDZiMoStNQBv3HYA5pqpwPyecbMh8p5momO4b1A9Eg=
 github.com/smartcontractkit/crec-sdk v0.1.6 h1:45TuDGYutJZ0VKvLsHLCMUBrRpi+wKbQQ/zMPiuP7u0=
 github.com/smartcontractkit/crec-sdk v0.1.6/go.mod h1:WIaKrXHfFZuKOnv70iqcMByVUhgjO1o+Kact/uZI12Q=
 github.com/spkg/bom v0.0.0-20160624110644-59b7046e48ad/go.mod h1:qLr4V1qq6nMqFKkMo8ZTx3f+BZEkzsRUY10Xsm2mwU0=

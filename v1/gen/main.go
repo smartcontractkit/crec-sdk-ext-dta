@@ -1311,7 +1311,7 @@ func generateCombinedWatcherValuesFile(contractConfigs []ContractConfig) {
 		// Store all events and view functions separately for later filtering
 		var allEvents []cleanEvent
 		var allEventNames []string
-		var allViewFunctions []ABIEntry
+		var allFunctions []ABIEntry
 
 		for _, entry := range entries {
 			// Extract events, convert to clean format
@@ -1333,8 +1333,8 @@ func generateCombinedWatcherValuesFile(contractConfigs []ContractConfig) {
 				allEventNames = append(allEventNames, entry.Name)
 			}
 			// Extract view functions
-			if entry.Type == "function" && entry.StateMutability == "view" {
-				allViewFunctions = append(allViewFunctions, entry)
+			if entry.Type == "function" {
+				allFunctions = append(allFunctions, entry)
 			}
 		}
 
@@ -1343,7 +1343,7 @@ func generateCombinedWatcherValuesFile(contractConfigs []ContractConfig) {
 		for _, ce := range allEvents {
 			fullABI = append(fullABI, ce)
 		}
-		for _, vf := range allViewFunctions {
+		for _, vf := range allFunctions {
 			fullABI = append(fullABI, vf)
 		}
 		fullABIJSON, err := json.Marshal(fullABI)

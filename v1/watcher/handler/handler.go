@@ -21,6 +21,7 @@ import (
 )
 
 var (
+	CompleteRequestProcessing    string = "completeRequestProcessing"
 	DTARequestManagement         string = "DTARequestManagement"
 	DTARequestSettlement         string = "DTARequestSettlement"
 	DTASettlementOpenedEventName string = "DTASettlementOpened"
@@ -154,7 +155,7 @@ func buildReferenceDataFromDTASettlementOpenedEvent(rt cre.Runtime, cfg *workflo
 		},
 	}
 	if cfg.DetectEventTriggerConfig.ContractEventName == DTASettlementOpenedEventName {
-		paymentRequest, err := buildPaymentRequest(rt, trigger, event, fundTokenData)
+		paymentRequest, err := buildPaymentRequest(rt, cfg, trigger, event, fundTokenData)
 		if err != nil {
 			return nil, err
 		}
@@ -501,7 +502,18 @@ func fetchAndDecodeFundToken(rt cre.Runtime, request GetFundTokenInput) (workflo
 	}, nil
 }
 
-func buildPaymentRequest(rt cre.Runtime, trigger workflows.Trigger, event workflows.Event, fundTokenData dtav1.FundTokenData) (workflows.PaymentRequest, error) {
+func buildPaymentRequest(rt cre.Runtime, cfg *workflows.Config, trigger workflows.Trigger, event workflows.Event, fundTokenData dtav1.FundTokenData) (workflows.PaymentRequest, error) {
+	abiJSON, _ := workflows.GetContractABI(cfg, DTARequestSettlement)
+	parsedABI, err := gethAbi.JSON(stringsNewReader(abiJSON))
+	if err != nil {
+		return workflows.PaymentRequest{}, err
+	}
+
+	callbackMethod, ok := parsedABI.Methods[CompleteRequestProcessing]
+	if !ok {
+		return workflows.PaymentRequest{}, fmt.Errorf("%s method not found", CompleteRequestProcessing)
+	}
+
 	expiration := event.BlockTimestamp.Unix() + int64(time.Hour)
 
 	decodedEvent, err := decodeDTASettlementOpened(rt, event.Args)
@@ -524,7 +536,7 @@ func buildPaymentRequest(rt cre.Runtime, trigger workflows.Trigger, event workfl
 		return workflows.PaymentRequest{}, fmt.Errorf("unknown request type: %d", decodedEvent.RequestType)
 	}
 
-	amount := workflows.Fixed2(decodedEvent.Amount.Int64() / int64(math.Pow10(int(fundTokenData.NavFeedDecimals)))) // TODO: confirm which decimals to use
+	amount := workflows.Fixed2(decodedEvent.Amount.Int64() / int64(math.Pow10(int(fundTokenData.NavFeedDecimals))))
 
 	return workflows.PaymentRequest{
 		ApplicationType: WorkflowDomain,
@@ -536,6 +548,11 @@ func buildPaymentRequest(rt cre.Runtime, trigger workflows.Trigger, event workfl
 		ChainID:         trigger.ChainID,
 		Amount:          amount,
 		Expiration:      &expiration,
+		CustomCallback: &workflows.PaymentCallback{
+			ContractAddress:   event.ContractAddress,
+			FunctionName:      CompleteRequestProcessing,
+			FunctionSignature: callbackMethod.Sig,
+		},
 	}, nil
 }
 

@@ -30,6 +30,11 @@ func (e DecodedEvent) EventName() EventName {
 	return name
 }
 
+// EventDecoders returns the map of event decoders for external use.
+func EventDecoders() map[EventName]eventDecoder {
+	return eventDecoders
+}
+
 // DecodeFromEvent extracts the WatcherEventPayload from an apiClient.Event and decodes
 // the ConcreteEvent based on the event type.
 func DecodeFromEvent(ctx context.Context, event apiClient.Event) (DecodedEvent, error) {
@@ -68,7 +73,7 @@ func DecodeFromEvent(ctx context.Context, event apiClient.Event) (DecodedEvent, 
 		return DecodedEvent{}, fmt.Errorf("decode %s: %w", name, err)
 	}
 
-	referenceData, err := decodeReferenceData(payload.VerifiableEvent)
+	referenceData, err := decodeReferenceData(verifiableEvent)
 	if err != nil {
 		return DecodedEvent{}, fmt.Errorf("decode reference data: %w", err)
 	}
@@ -91,25 +96,17 @@ func DecodeFromEvent(ctx context.Context, event apiClient.Event) (DecodedEvent, 
 	}, nil
 }
 
-func decodeReferenceData(verifiableEventB64 string) (workflows.ReferenceData, error) {
+func decodeReferenceData(verifiableEvent workflows.VerifiableEvent) (workflows.ReferenceData, error) {
 	var referenceData workflows.ReferenceData
-
-	verifiableEventBytes, err := base64.StdEncoding.DecodeString(verifiableEventB64)
-	if err != nil {
-		return referenceData, fmt.Errorf("failed to base64 decode verifiable event: %w", err)
+	if verifiableEvent.ReferenceData == nil {
+		return referenceData, fmt.Errorf("reference data not found")
 	}
-
-	var verifiableEvent workflows.VerifiableEvent
-	err = json.Unmarshal(verifiableEventBytes, &verifiableEvent)
-	if err != nil {
-		return referenceData, fmt.Errorf("failed to unmarshal verifiable event: %w", err)
+	if verifiableEvent.ReferenceData.Type != workflows.RawMessageTypeReferenceData {
+		return referenceData, fmt.Errorf("reference data is not a raw message")
 	}
-
-	if verifiableEvent.ReferenceData != nil && verifiableEvent.ReferenceData.Type == workflows.RawMessageTypeReferenceData {
-		err = json.Unmarshal(verifiableEvent.ReferenceData.Value, &referenceData)
-		if err != nil {
-			return referenceData, fmt.Errorf("failed to unmarshal reference data: %w", err)
-		}
+	err := json.Unmarshal(verifiableEvent.ReferenceData.Value, &referenceData)
+	if err != nil {
+		return referenceData, fmt.Errorf("failed to unmarshal reference data: %w", err)
 	}
 
 	return referenceData, nil

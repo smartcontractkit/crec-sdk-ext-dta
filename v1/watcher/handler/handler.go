@@ -4,7 +4,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"math"
+	"math/big"
 	"strconv"
 	"strings"
 	"time"
@@ -17,7 +17,6 @@ import (
 	"github.com/smartcontractkit/cre-sdk-go/cre"
 	workflows "github.com/smartcontractkit/cre-workflow-utils"
 	dtav1 "github.com/smartcontractkit/crec-sdk-ext-dta/v1"
-	"github.com/smartcontractkit/crec-sdk/parsing"
 )
 
 var (
@@ -174,8 +173,11 @@ func buildReferenceDataFromDTASettlementOpenedEvent(rt cre.Runtime, cfg *workflo
 }
 
 func buildGetDistributorRequestInputFromDTASettlementOpenedEvent(rt cre.Runtime, cfg *workflows.Config, params map[string]any) (*GetDistributorRequestInput, error) {
-	abiJSON, _ := workflows.GetContractABI(cfg, DTARequestManagement)
-	parsedABI, err := gethAbi.JSON(stringsNewReader(abiJSON))
+	abiJSON, err := workflows.GetContractABI(cfg, DTARequestManagement)
+	if err != nil {
+		return nil, err
+	}
+	parsedABI, err := gethAbi.JSON(strings.NewReader(abiJSON))
 	if err != nil {
 		return nil, err
 	}
@@ -220,8 +222,11 @@ func buildGetDistributorRequestInputFromDTASettlementOpenedEvent(rt cre.Runtime,
 }
 
 func buildGetDistributorRequestInputFromDTARequestManagementEvent(rt cre.Runtime, cfg *workflows.Config, event workflows.Event) (*GetDistributorRequestInput, error) {
-	abiJSON, _ := workflows.GetContractABI(cfg, DTARequestManagement)
-	parsedABI, err := gethAbi.JSON(stringsNewReader(abiJSON))
+	abiJSON, err := workflows.GetContractABI(cfg, DTARequestManagement)
+	if err != nil {
+		return nil, err
+	}
+	parsedABI, err := gethAbi.JSON(strings.NewReader(abiJSON))
 	if err != nil {
 		return nil, err
 	}
@@ -314,8 +319,11 @@ func fetchAndDecodeDistributorRequest(rt cre.Runtime, request GetDistributorRequ
 }
 
 func buildFundTokenDataRequestFromDTASettlementOpenedEvent(rt cre.Runtime, cfg *workflows.Config, params map[string]any) (GetFundTokenInput, error) {
-	abiJSON, _ := workflows.GetContractABI(cfg, DTARequestManagement)
-	parsedABI, err := gethAbi.JSON(stringsNewReader(abiJSON))
+	abiJSON, err := workflows.GetContractABI(cfg, DTARequestManagement)
+	if err != nil {
+		return GetFundTokenInput{}, err
+	}
+	parsedABI, err := gethAbi.JSON(strings.NewReader(abiJSON))
 	if err != nil {
 		return GetFundTokenInput{}, err
 	}
@@ -369,8 +377,11 @@ func buildFundTokenDataRequestFromDTASettlementOpenedEvent(rt cre.Runtime, cfg *
 }
 
 func buildFundTokenDataRequestFromDTARequestManagementEvent(rt cre.Runtime, cfg *workflows.Config, event workflows.Event, distributorRequest *dtav1.DistributorRequest) (*GetFundTokenInput, error) {
-	abiJSON, _ := workflows.GetContractABI(cfg, DTARequestManagement)
-	parsedABI, err := gethAbi.JSON(stringsNewReader(abiJSON))
+	abiJSON, err := workflows.GetContractABI(cfg, DTARequestManagement)
+	if err != nil {
+		return nil, err
+	}
+	parsedABI, err := gethAbi.JSON(strings.NewReader(abiJSON))
 	if err != nil {
 		return nil, err
 	}
@@ -504,7 +515,7 @@ func fetchAndDecodeFundToken(rt cre.Runtime, request GetFundTokenInput) (workflo
 
 func buildPaymentRequest(rt cre.Runtime, cfg *workflows.Config, trigger workflows.Trigger, event workflows.Event, fundTokenData dtav1.FundTokenData) (workflows.PaymentRequest, error) {
 	abiJSON, _ := workflows.GetContractABI(cfg, DTARequestSettlement)
-	parsedABI, err := gethAbi.JSON(stringsNewReader(abiJSON))
+	parsedABI, err := gethAbi.JSON(strings.NewReader(abiJSON))
 	if err != nil {
 		return workflows.PaymentRequest{}, err
 	}
@@ -516,7 +527,7 @@ func buildPaymentRequest(rt cre.Runtime, cfg *workflows.Config, trigger workflow
 
 	expiration := event.BlockTimestamp.Unix() + int64(time.Hour)
 
-	decodedEvent, err := decodeDTASettlementOpened(rt, event.Args)
+	decodedEvent, err := decodeDTASettlementOpened(event.Args)
 	if err != nil {
 		return workflows.PaymentRequest{}, fmt.Errorf("failed to decode DTA settlement opened event: %w", err)
 	}
@@ -536,7 +547,12 @@ func buildPaymentRequest(rt cre.Runtime, cfg *workflows.Config, trigger workflow
 		return workflows.PaymentRequest{}, fmt.Errorf("unknown request type: %d", decodedEvent.RequestType)
 	}
 
-	amount := workflows.Fixed2(decodedEvent.Amount.Int64() / int64(math.Pow10(int(fundTokenData.NavFeedDecimals))))
+	divisor := new(big.Int).Exp(big.NewInt(10), big.NewInt(int64(fundTokenData.NavFeedDecimals)), nil)
+	quotient := new(big.Int).Div(decodedEvent.Amount, divisor)
+	if !quotient.IsInt64() {
+		return workflows.PaymentRequest{}, fmt.Errorf("amount overflow: %s", quotient.String())
+	}
+	amount := workflows.Fixed2(quotient.Int64())
 
 	return workflows.PaymentRequest{
 		ApplicationType: WorkflowDomain,
@@ -556,48 +572,30 @@ func buildPaymentRequest(rt cre.Runtime, cfg *workflows.Config, trigger workflow
 	}, nil
 }
 
-func decodeDTASettlementOpened(rt cre.Runtime, params map[string]any) (dtav1.DTASettlementOpened, error) {
-	requestTypeStr, ok := params["request_type"].(string)
+func decodeDTASettlementOpened(params map[string]any) (dtav1.DTASettlementOpened, error) {
+	// Convert map[string]any to map[string]string (same conversion used in decode.go)
+	stringParams := make(map[string]string, len(params))
+	for k, v := range params {
+		stringParams[k] = fmt.Sprintf("%v", v)
+	}
+
+	// Use the generated decoder from decode_gen.go via eventDecoders
+	decoder, ok := dtav1.EventDecoders()[dtav1.EventDTASettlementOpened]
 	if !ok {
-		return dtav1.DTASettlementOpened{}, fmt.Errorf("request_type is not a string")
-	}
-	requestType, err := parsing.ScientificNotationToUint8(requestTypeStr)
-	if err != nil {
-		rt.Logger().Error("failed to parse request_type", "error", err)
-		return dtav1.DTASettlementOpened{}, fmt.Errorf("parse request_type %q: %w", params["request_type"], err)
+		return dtav1.DTASettlementOpened{}, fmt.Errorf("decoder not found for DTASettlementOpened")
 	}
 
-	shares, err := parsing.ScientificNotationToBigInt(params["shares"].(string))
+	// Call the decoder (txHash not needed for this event)
+	concrete, err := decoder(stringParams, "")
 	if err != nil {
-		rt.Logger().Error("failed to parse shares", "error", err)
-		return dtav1.DTASettlementOpened{}, fmt.Errorf("parse shares %q: %w", params["shares"], err)
+		return dtav1.DTASettlementOpened{}, fmt.Errorf("decode DTASettlementOpened: %w", err)
 	}
 
-	amount, err := parsing.ScientificNotationToBigInt(params["amount"].(string))
-	if err != nil {
-		rt.Logger().Error("failed to parse amount", "error", err)
-		return dtav1.DTASettlementOpened{}, fmt.Errorf("parse amount %q: %w", params["amount"], err)
-	}
-
-	currency, ok := params["currency"].(uint8)
+	// Type assert to the concrete type
+	event, ok := concrete.(*dtav1.DTASettlementOpened)
 	if !ok {
-		return dtav1.DTASettlementOpened{}, fmt.Errorf("currency is not a uint8")
+		return dtav1.DTASettlementOpened{}, fmt.Errorf("decoded event is not DTASettlementOpened")
 	}
 
-	return dtav1.DTASettlementOpened{
-		FundAdminAddr:         gethCommon.HexToAddress(params["fund_admin_addr"].(string)),
-		FundTokenId:           gethCommon.HexToHash(params["fund_token_id"].(string)),
-		RequestType:           dtav1.DistributorRequestType(requestType),
-		DistributorAddr:       gethCommon.HexToAddress(params["distributor_addr"].(string)),
-		DtaChainSelector:      params["dta_chain_selector"].(uint64),
-		DtaAddr:               gethCommon.HexToAddress(params["dta_addr"].(string)),
-		RequestId:             gethCommon.HexToHash(params["request_id"].(string)),
-		DistributorWalletAddr: gethCommon.HexToAddress(params["distributor_wallet_addr"].(string)),
-		Shares:                shares,
-		Amount:                amount,
-		Currency:              currency,
-	}, nil
+	return *event, nil
 }
-
-// stringsNewReader is a tiny helper to keep imports local.
-func stringsNewReader(s string) *strings.Reader { return strings.NewReader(s) }

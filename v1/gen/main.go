@@ -23,20 +23,21 @@ import (
 
 // ABIEntry represents a single entry in the ABI JSON.
 type ABIEntry struct {
-	Type            string     `json:"type"`
-	Name            string     `json:"name"`
-	Inputs          []ABIInput `json:"inputs"`
-	StateMutability string     `json:"stateMutability"`
-	Anonymous       bool       `json:"anonymous"`
+	Type            string         `json:"type"`
+	Name            string         `json:"name"`
+	Inputs          []ABIComponent `json:"inputs"`
+	Outputs         []ABIComponent `json:"outputs"`
+	StateMutability string         `json:"stateMutability"`
+	Anonymous       bool           `json:"anonymous"`
 }
 
-// ABIInput represents an input parameter in the ABI.
-type ABIInput struct {
-	Name         string     `json:"name"`
-	Type         string     `json:"type"`
-	InternalType string     `json:"internalType"`
-	Indexed      bool       `json:"indexed"`
-	Components   []ABIInput `json:"components"`
+// ABIComponent represents an input parameter in the ABI.
+type ABIComponent struct {
+	Name         string         `json:"name"`
+	Type         string         `json:"type"`
+	InternalType string         `json:"internalType"`
+	Indexed      bool           `json:"indexed"`
+	Components   []ABIComponent `json:"components"`
 }
 
 // =============================================================================
@@ -1122,6 +1123,10 @@ func generateWatcherValuesFiles(contractConfigs []ContractConfig) {
 		os.Exit(1)
 	}
 
+	// Generate combined values file with all contracts
+	generateCombinedWatcherValuesFile(contractConfigs)
+
+	// Keep per-contract files for backward compatibility
 	for _, contract := range contractConfigs {
 		generateWatcherValuesFile(contract)
 	}
@@ -1157,8 +1162,8 @@ func generateWatcherValuesFile(contract ContractConfig) {
 		os.Exit(1)
 	}
 
-	// Extract only events and convert to clean format
-	var events []cleanEvent
+	var combinedEntries []interface{}
+	// Extract events, convert to clean format
 	for _, entry := range entries {
 		if entry.Type == "event" {
 			ce := cleanEvent{
@@ -1174,14 +1179,20 @@ func generateWatcherValuesFile(contract ContractConfig) {
 					InternalType: input.InternalType,
 				})
 			}
-			events = append(events, ce)
+			combinedEntries = append(combinedEntries, ce)
+		}
+	}
+	// Extract view functions and append to combined entries
+	for _, entry := range entries {
+		if entry.Type == "function" && entry.StateMutability == "view" {
+			combinedEntries = append(combinedEntries, entry)
 		}
 	}
 
 	// Marshal events back to JSON
-	eventsJSON, err := json.Marshal(events)
+	combinedJSON, err := json.Marshal(combinedEntries)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "ERROR: Failed to marshal events JSON: %v\n", err)
+		fmt.Fprintf(os.Stderr, "ERROR: Failed to marshal combined JSON: %v\n", err)
 		os.Exit(1)
 	}
 
@@ -1197,7 +1208,7 @@ func generateWatcherValuesFile(contract ContractConfig) {
 		ContractName:      contract.Name,
 		ContractNameLower: contractNameLower,
 		ABIFile:           contract.ABIFile,
-		EventsJSON:        string(eventsJSON),
+		EventsJSON:        string(combinedJSON),
 	}
 
 	tmpl := `# ==========================================================================
@@ -1223,7 +1234,7 @@ chainSelector: 16015286601757825753
 
 # CREC service configuration
 courierUrl: "https://crec.chainlink.com"
-service: "myservice"
+service: "dta"
 watcherID: "00000000-0000-0000-0000-000000000000"
 
 # Contract configuration (from ABI)
@@ -1250,5 +1261,165 @@ contractABI: '{{.EventsJSON}}'
 		os.Exit(1)
 	}
 
-	fmt.Printf("✓ Generated %s with %d events\n", outputPath, len(events))
+	fmt.Printf("✓ Generated %s with %d events and view functions\n", outputPath, len(combinedEntries))
+}
+
+// contractData represents contract information for the combined values file
+type contractData struct {
+	Name    string
+	Address string
+	ABI     string // Full ABI with all events and view functions (for reference)
+}
+
+// combinedValuesData represents the structure for the combined values file
+type combinedValuesData struct {
+	WorkflowName        string
+	Network             string
+	ChainId             string
+	ChainSelector       uint64
+	CourierUrl          string
+	Service             string
+	WatcherID           string
+	TriggerContractName string
+	TriggerEventName    string
+	Contracts           []contractData
+}
+
+func generateCombinedWatcherValuesFile(contractConfigs []ContractConfig) {
+	if len(contractConfigs) == 0 {
+		fmt.Fprintf(os.Stderr, "ERROR: No contracts configured\n")
+		os.Exit(1)
+	}
+
+	var contractsData []contractData
+
+	// Process each contract
+	for _, contract := range contractConfigs {
+		// Load and parse ABI to extract events and view functions
+		abiData, err := os.ReadFile(contract.ABIFile)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "ERROR: Failed to read ABI for watcher values: %v\n", err)
+			os.Exit(1)
+		}
+
+		var entries []ABIEntry
+		if err := json.Unmarshal(abiData, &entries); err != nil {
+			fmt.Fprintf(os.Stderr, "ERROR: Failed to parse ABI for watcher values: %v\n", err)
+			os.Exit(1)
+		}
+
+		// Store all events and view functions separately for later filtering
+		var allEvents []cleanEvent
+		var allEventNames []string
+		var allFunctions []ABIEntry
+
+		for _, entry := range entries {
+			// Extract events, convert to clean format
+			if entry.Type == "event" {
+				ce := cleanEvent{
+					Type:      entry.Type,
+					Name:      entry.Name,
+					Anonymous: entry.Anonymous,
+				}
+				for _, input := range entry.Inputs {
+					ce.Inputs = append(ce.Inputs, cleanEventInput{
+						Name:         input.Name,
+						Type:         input.Type,
+						Indexed:      input.Indexed,
+						InternalType: input.InternalType,
+					})
+				}
+				allEvents = append(allEvents, ce)
+				allEventNames = append(allEventNames, entry.Name)
+			}
+			// Extract view functions
+			if entry.Type == "function" {
+				allFunctions = append(allFunctions, entry)
+			}
+		}
+
+		// Store full ABI for reference (all events + view functions)
+		var fullABI []interface{}
+		for _, ce := range allEvents {
+			fullABI = append(fullABI, ce)
+		}
+		for _, vf := range allFunctions {
+			fullABI = append(fullABI, vf)
+		}
+		fullABIJSON, err := json.Marshal(fullABI)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "ERROR: Failed to marshal full ABI JSON: %v\n", err)
+			os.Exit(1)
+		}
+
+		contractsData = append(contractsData, contractData{
+			Name:    contract.Name,
+			Address: "0x0000000000000000000000000000000000000000",
+			ABI:     string(fullABIJSON),
+		})
+	}
+
+	data := combinedValuesData{
+		WorkflowName:        "watcher-dta-v1",
+		Network:             "evm",
+		ChainId:             "11155111",
+		ChainSelector:       16015286601757825753,
+		CourierUrl:          "https://crec.chainlink.com",
+		Service:             "dta",
+		WatcherID:           "00000000-0000-0000-0000-000000000000",
+		TriggerContractName: "", // Must be specified by user
+		TriggerEventName:    "", // Must be specified by user
+		Contracts:           contractsData,
+	}
+
+	tmpl := `# ==========================================================================
+# WATCHER VALUES: Combined (All Contracts)
+# ==========================================================================
+# Auto-generated from all ABI files in abi/
+# This file contains configuration for all contracts.
+# Customize triggerContractName and triggerEventName as needed.
+
+# ==========================================================================
+# WORKFLOW.YAML VALUES
+# ==========================================================================
+# NOTE: workflowName has a maximum of 32 characters
+workflowName: "{{.WorkflowName}}"
+
+# ==========================================================================
+# CONFIG.YAML VALUES
+# ==========================================================================
+
+# CREC service configuration
+courierUrl: "{{.CourierUrl}}"
+service: "{{.Service}}"
+watcherID: "{{.WatcherID}}"
+
+# Contracts configuration
+# All contracts are listed here with their full ABIs (all events + view functions)
+# The template will filter the ABI when generating config.yaml:
+#   - Trigger contract: only trigger event + all view functions
+#   - Non-trigger contracts: only view functions
+# Only the trigger contract will have contractPollingFilter in the generated config.yaml
+contracts:
+{{- range .Contracts}}
+  - name: "{{.Name}}"
+    address: "{{.Address}}"
+    abi: '{{.ABI}}'
+{{- end}}
+`
+
+	t := template.Must(template.New("combinedWatcherValues").Parse(tmpl))
+	var buf bytes.Buffer
+	if err := t.Execute(&buf, data); err != nil {
+		fmt.Fprintf(os.Stderr, "ERROR: Failed to execute combined watcher values template: %v\n", err)
+		os.Exit(1)
+	}
+
+	outputPath := "watcher/values/values.yaml"
+	if err := os.WriteFile(outputPath, buf.Bytes(), 0644); err != nil {
+		fmt.Fprintf(os.Stderr, "ERROR: Failed to write combined watcher values file: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Printf("✓ Generated %s with %d contracts\n", outputPath, len(contractsData))
 }

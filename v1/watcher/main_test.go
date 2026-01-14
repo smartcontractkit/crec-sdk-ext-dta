@@ -23,12 +23,13 @@ import (
 
 func TestWatcherV1_DTA_SimpleFlow_Post(t *testing.T) {
 	rt := workflows.PrepareTestingRuntime(t)
+	service := "dta"
 
 	cfg := &workflows.Config{
 		Network:       "evm",
 		ChainID:       "31337",
 		ChainSelector: "3379446385462418246",
-		Service:       "dta",
+		Service:       &service,
 		CourierURL:    "http://example.com",
 		ApiKeySecret:  "courier",
 		DetectEventTriggerConfig: workflows.DetectEventTriggerConfig{
@@ -38,7 +39,7 @@ func TestWatcherV1_DTA_SimpleFlow_Post(t *testing.T) {
 			ContractReaderConfig: workflows.ContractReaderConfig{
 				Contracts: map[string]workflows.ContractDef{
 					"TransparentUpgradeableProxy": {
-						ContractABI: `[{"type":"event","name":"FundAdminRegistered","inputs":[{"name":"fundAdminAddr","type":"address","indexed":false,"internalType":"address"}],"anonymous":false}]`,
+						ContractABI: `[{"type":"event","name":"FundAdminRegistered","inputs":[{"name":"fundAdminAddr","type":"address","indexed":false,"internalType":"address"}],"anonymous":false},{"type":"function","name":"getFundToken","inputs":[{"name":"fundAdminAddr","type":"address","internalType":"address"},{"name":"fundTokenId","type":"bytes32","internalType":"bytes32"}],"outputs":[{"name":"enabled","type":"bool","internalType":"bool"},{"name":"","type":"tuple","internalType":"struct IFundTokenRegistry.FundTokenData","components":[{"name":"fundTokenAddr","type":"address","internalType":"address"},{"name":"navFeedDecimals","type":"uint8","internalType":"uint8"},{"name":"purchaseTokenRoundingDecimals","type":"uint8","internalType":"uint8"},{"name":"purchaseTokenDecimals","type":"uint8","internalType":"uint8"},{"name":"fundRoundingDecimals","type":"uint8","internalType":"uint8"},{"name":"fundTokenDecimals","type":"uint8","internalType":"uint8"},{"name":"requestsPerDay","type":"uint8","internalType":"uint8"},{"name":"navAddr","type":"address","internalType":"address"},{"name":"tokenChainSelector","type":"uint64","internalType":"uint64"},{"name":"dtaRequestSettlementAddr","type":"address","internalType":"address"},{"name":"timezoneOffsetSecs","type":"int24","internalType":"int24"},{"name":"navTTL","type":"uint24","internalType":"uint24"},{"name":"paymentInfo","type":"tuple","internalType":"struct IDTAMessage.DTAPayment","components":[{"name":"offChainPaymentCurrency","type":"uint8","internalType":"enum Currency"},{"name":"paymentTokenSourceAddr","type":"address","internalType":"address"},{"name":"paymentTokenDestAddr","type":"address","internalType":"address"}]}]}],"stateMutability":"view"}]`,
 					},
 				},
 			},
@@ -64,17 +65,11 @@ func TestWatcherV1_DTA_SimpleFlow_Post(t *testing.T) {
 		require.NoError(t, json.Unmarshal(verBytes, &embedded))
 
 		ev := embedded["event"].(map[string]any)
-		require.Equal(t, "dta", ev["service"])
-		require.Equal(t, "FundAdminRegistered", ev["name"])
+		require.Equal(t, service, embedded["domain"])
+		require.Equal(t, "FundAdminRegistered", ev["event_name"])
 
-		params := embedded["parameters"].(map[string]any)
+		params := ev["args"].(map[string]any)
 		require.Equal(t, "0x0000000000000000000000000000000000000001", params["fund_admin_addr"])
-
-		meta := embedded["metadata"].(map[string]any)
-		wfe := meta["workflowEvent"].(map[string]any)
-		attrs := wfe["attributes"].(map[string]any)
-		fa := attrs["fund_admin_addr"].(map[string]any)
-		require.Equal(t, "0x0000000000000000000000000000000000000001", fa["value"])
 
 		return &httpcap.Response{StatusCode: 200}, nil
 	}
@@ -95,4 +90,3 @@ func TestWatcherV1_DTA_SimpleFlow_Post(t *testing.T) {
 	_, err = wf.OnLog(cfg, rt, log)
 	require.NoError(t, err)
 }
-

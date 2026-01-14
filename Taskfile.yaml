@@ -110,6 +110,7 @@ tasks:
       VERSION: '{{ .VERSION | default "v1" }}'
       VALUES_FILE: '{{ .VALUES_FILE | default "values/values.yaml" }}'
       WF_NAME_OVERRIDE: '{{ .WF_NAME_OVERRIDE | default "" }}'
+      TRIGGER_CONFIG_FILE: '{{ .TRIGGER_CONFIG_FILE | default "values/trigger_config.yaml" }}'
     cmds:
       - |
         VALUES_PATH="{{ .VERSION }}/watcher/{{ .VALUES_FILE }}"
@@ -118,11 +119,18 @@ tasks:
           exit 1
         fi
 
+        TRIGGER_CONFIG_PATH="{{ .VERSION }}/watcher/{{ .TRIGGER_CONFIG_FILE }}"
+        if [ ! -f "$TRIGGER_CONFIG_PATH" ]; then
+          echo "❌ trigger config file not found: $TRIGGER_CONFIG_PATH"
+          exit 1
+        fi
+
         export WF_NAME_OVERRIDE="{{ .WF_NAME_OVERRIDE }}"
 
         if [ -f "{{ .VERSION }}/watcher/config.tmpl" ]; then
           gomplate \
             -d "config=$VALUES_PATH" \
+            -d "trigger_config=$TRIGGER_CONFIG_PATH" \
             -f {{ .VERSION }}/watcher/config.tmpl \
             -o {{ .VERSION }}/watcher/config.yaml
           echo "✅ config.yaml generated"
@@ -131,6 +139,7 @@ tasks:
         if [ -f "{{ .VERSION }}/watcher/workflow.tmpl" ]; then
           gomplate \
             -d "config=$VALUES_PATH" \
+            -d "trigger_config=$TRIGGER_CONFIG_PATH" \
             -f {{ .VERSION }}/watcher/workflow.tmpl \
             -o {{ .VERSION }}/watcher/workflow.yaml
           echo "✅ workflow.yaml generated"

@@ -86,3 +86,16 @@ type FundTokenData struct {
 	NavTTL                        *big.Int
 	PaymentInfo                   DTAPayment
 }
+
+// DistributorRequest represents the data for a distributor request.
+// Maps to the IDTADistributor.DistributorRequest struct in DTARequestManagement.
+type DistributorRequest struct {
+	Shares          *big.Int
+	Amount          *big.Int
+	FundTokenId     [32]byte
+	FundAdminAddr   common.Address
+	DistributorAddr common.Address
+	CreatedAt       *big.Int
+	RequestType     uint8
+	Status          uint8
+}

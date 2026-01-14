@@ -1,6 +1,6 @@
-network: "{{ ((datasource "config").network) }}"
-chainID: "{{ ((datasource "config").chainId) }}"
-chainSelector: {{ ((datasource "config").chainSelector) }}
+network: "{{ ((datasource "trigger_config").network) }}"
+chainID: "{{ ((datasource "trigger_config").chainId) }}"
+chainSelector: {{ ((datasource "trigger_config").chainSelector) }}
 workflowEventOtelEndpoint: ""
 courierURL: "{{ ((datasource "config").courierUrl) }}"
 service: "{{ ((datasource "config").service) }}"
@@ -8,17 +8,19 @@ watcherID: "{{ ((datasource "config").watcherID) }}"
 workflowName: "{{ ((datasource "config").workflowName) }}"
 apiKeySecret: "courier"
 detectEventTriggerConfig:
-  contractName: "{{ ((datasource "config").contractName) }}"
-  contractAddress: "{{ ((datasource "config").contractAddress) }}"
-  contractEventName: "{{ ((datasource "config").eventName) }}"
+  contractName: "{{ ((datasource "trigger_config").triggerContractName) }}"
+  contractAddress: "{{ ((datasource "trigger_config").triggerContractAddress) }}"
+  contractEventName: "{{ ((datasource "trigger_config").triggerEventName) }}"
   contractReaderConfig:
     contracts:
-      {{ ((datasource "config").contractName) }}:
+{{- range ((datasource "config").contracts) }}
+      {{ .name }}:
+        contractABI: '{{ .abi }}'
+        {{- if eq .name ((datasource "trigger_config").triggerContractName) }}
         configs:
-          {{ ((datasource "config").eventName) }}: '{"chainSpecificName": "{{ ((datasource "config").eventName) }}", "readType": "event"}'
-        contractABI: '{{ ((datasource "config").contractABI) }}'
+          {{ ((datasource "trigger_config").triggerEventName) }}: '{"chainSpecificName": "{{ ((datasource "trigger_config").triggerEventName) }}", "readType": "event"}'
         contractPollingFilter:
-          genericEventNames: ["{{ ((datasource "config").eventName) }}"]
+          genericEventNames: ["{{ ((datasource "trigger_config").triggerEventName) }}"]
           pollingFilter:
             logsPerBlock: 0
             maxLogsKept: 0
@@ -26,4 +28,7 @@ detectEventTriggerConfig:
             topic2: null
             topic3: null
             topic4: null
+        {{- end }}
+{{- end }}
+
 

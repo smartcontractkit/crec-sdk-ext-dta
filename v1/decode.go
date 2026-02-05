@@ -2,7 +2,6 @@ package v1
 
 import (
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 
@@ -17,13 +16,17 @@ type ConcreteEvent interface{}
 type DecodedEvent struct {
 	apiClient.WatcherEventPayload
 	ConcreteEvent   ConcreteEvent
-	FundTokenData   FundTokenData
+	FundTokenData   *FundTokenData
 	PaymentRequests []workflows.PaymentRequest
 }
 
 // EventName returns the parsed event name from the payload.
 func (e DecodedEvent) EventName() EventName {
-	name, ok := parseEventName(e.Name)
+	verifiableEvent, err := workflows.DecodeVerifiableEvent(e.WatcherEventPayload.VerifiableEvent)
+	if err != nil || verifiableEvent == nil {
+		return EventUnknown
+	}
+	name, ok := parseEventName(verifiableEvent.Name)
 	if !ok {
 		return EventUnknown
 	}
@@ -43,49 +46,54 @@ func DecodeFromEvent(ctx context.Context, event apiClient.Event) (DecodedEvent, 
 		return DecodedEvent{}, fmt.Errorf("extract watcher payload: %w", err)
 	}
 
-	name, ok := parseEventName(payload.Name)
+	verifiableEvent, err := workflows.DecodeVerifiableEvent(payload.VerifiableEvent)
+	if err != nil {
+		return DecodedEvent{}, fmt.Errorf("failed to decode verifiable event: %w", err)
+	}
+	if verifiableEvent == nil {
+		return DecodedEvent{}, fmt.Errorf("verifiable event is nil")
+	}
+
+	name, ok := parseEventName(verifiableEvent.Name)
 	if !ok {
-		return DecodedEvent{}, fmt.Errorf("unsupported event name: %s", payload.Name)
+		return DecodedEvent{}, fmt.Errorf("unsupported event name: %s", verifiableEvent.Name)
 	}
 	decoder, ok := eventDecoders[name]
 	if !ok {
 		return DecodedEvent{}, fmt.Errorf("unsupported event decoder for event name: %s", name)
 	}
 
-	verifiableEventBytes, err := base64.StdEncoding.DecodeString(payload.VerifiableEvent)
+	evmEvent, err := verifiableEvent.ChainEvent.AsEVMEvent()
 	if err != nil {
-		return DecodedEvent{}, fmt.Errorf("failed to decode verifiable event: %w", err)
+		return DecodedEvent{}, fmt.Errorf("failed to convert chain event to evm event: %w", err)
 	}
 
-	var verifiableEvent workflows.VerifiableEvent
-	err = json.Unmarshal(verifiableEventBytes, &verifiableEvent)
-	if err != nil {
-		return DecodedEvent{}, fmt.Errorf("failed to unmarshal verifiable event: %w", err)
-	}
-
-	params := make(map[string]string, len(verifiableEvent.Event.Args))
-	for k, v := range verifiableEvent.Event.Args {
+	params := make(map[string]string, len(*evmEvent.Params))
+	for k, v := range *evmEvent.Params {
 		params[k] = fmt.Sprintf("%v", v)
 	}
 
-	concrete, err := decoder(params, verifiableEvent.Trigger.TxHash)
+	concrete, err := decoder(params, evmEvent.TxHash)
 	if err != nil {
 		return DecodedEvent{}, fmt.Errorf("decode %s: %w", name, err)
 	}
 
-	referenceData, err := decodeReferenceData(verifiableEvent)
+	referenceData, err := workflows.GetReferenceDataFromVerifiableEvent(*verifiableEvent)
 	if err != nil {
 		return DecodedEvent{}, fmt.Errorf("decode reference data: %w", err)
 	}
 
-	fundTokenData, err := decodeFundTokenData(referenceData)
-	if err != nil {
-		return DecodedEvent{}, fmt.Errorf("decode fundTokenData: %w", err)
-	}
-
-	paymentRequests, err := decodePaymentRequests(referenceData)
-	if err != nil {
-		return DecodedEvent{}, fmt.Errorf("decode paymentRequest: %w", err)
+	var fundTokenData *FundTokenData
+	var paymentRequests []workflows.PaymentRequest
+	if referenceData != nil {
+		fundTokenData, err = decodeFundTokenData(*referenceData)
+		if err != nil {
+			return DecodedEvent{}, fmt.Errorf("decode fundTokenData: %w", err)
+		}
+		paymentRequests, err = decodePaymentRequests(*referenceData)
+		if err != nil {
+			return DecodedEvent{}, fmt.Errorf("decode paymentRequest: %w", err)
+		}
 	}
 
 	return DecodedEvent{
@@ -96,46 +104,30 @@ func DecodeFromEvent(ctx context.Context, event apiClient.Event) (DecodedEvent, 
 	}, nil
 }
 
-func decodeReferenceData(verifiableEvent workflows.VerifiableEvent) (workflows.ReferenceData, error) {
-	var referenceData workflows.ReferenceData
-	if verifiableEvent.ReferenceData == nil {
-		return referenceData, fmt.Errorf("reference data not found")
-	}
-	if verifiableEvent.ReferenceData.Type != workflows.RawMessageTypeReferenceData {
-		return referenceData, fmt.Errorf("reference data is not a raw message")
-	}
-	err := json.Unmarshal(verifiableEvent.ReferenceData.Value, &referenceData)
-	if err != nil {
-		return referenceData, fmt.Errorf("failed to unmarshal reference data: %w", err)
-	}
-
-	return referenceData, nil
-}
-
-func decodeFundTokenData(referenceData workflows.ReferenceData) (FundTokenData, error) {
+func decodeFundTokenData(referenceData workflows.ReferenceData) (*FundTokenData, error) {
 	for _, onChainReferenceData := range referenceData.OnChain {
 		if onChainReferenceData.Source.ContractFunctionSignature == DTARequestManagementABI().Methods["getFundToken"].Sig {
 			fundTokenDataRaw, ok := onChainReferenceData.Data["fund_token_data"]
 			if !ok {
-				return FundTokenData{}, fmt.Errorf("fund_token_data key not found in reference data")
+				return nil, fmt.Errorf("fund_token_data key not found in reference data")
 			}
 
 			fundTokenDataBytes, err := json.Marshal(fundTokenDataRaw)
 			if err != nil {
-				return FundTokenData{}, fmt.Errorf("failed to marshal fund_token_data: %w", err)
+				return nil, fmt.Errorf("failed to marshal fund_token_data: %w", err)
 			}
 
 			var fundTokenData FundTokenData
 			err = json.Unmarshal(fundTokenDataBytes, &fundTokenData)
 			if err != nil {
-				return FundTokenData{}, fmt.Errorf("failed to unmarshal fund_token_data: %w", err)
+				return nil, fmt.Errorf("failed to unmarshal fund_token_data: %w", err)
 			}
 
-			return fundTokenData, nil
+			return &fundTokenData, nil
 		}
 	}
 
-	return FundTokenData{}, fmt.Errorf("fundTokenData not found")
+	return nil, fmt.Errorf("fundTokenData not found")
 }
 
 func decodePaymentRequests(referenceData workflows.ReferenceData) ([]workflows.PaymentRequest, error) {

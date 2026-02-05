@@ -16,15 +16,16 @@ import (
 	"github.com/smartcontractkit/cre-sdk-go/capabilities/blockchain/evm"
 	"github.com/smartcontractkit/cre-sdk-go/cre"
 	workflows "github.com/smartcontractkit/cre-workflow-utils"
+	apiModels "github.com/smartcontractkit/crec-api-go/models"
 	dtav1 "github.com/smartcontractkit/crec-sdk-ext-dta/v1"
 )
 
 var (
-	CompleteRequestProcessing    string = "completeRequestProcessing"
-	DTARequestManagement         string = "DTARequestManagement"
-	DTARequestSettlement         string = "DTARequestSettlement"
-	DTASettlementOpenedEventName string = "DTASettlementOpened"
-	WorkflowDomain               string = "dta"
+	CompleteRequestProcessing         string = "completeRequestProcessing"
+	DTARequestManagement              string = "DTARequestManagement"
+	DTARequestSettlement              string = "DTARequestSettlement"
+	DTASettlementOpenedEventSignature string = "DTASettlementOpened(address,uint8,bytes32,address,uint64,address,bytes32,address,uint256,uint256,uint8)"
+	WorkflowDomain                    string = "dta"
 )
 
 type GetDistributorRequestInput struct {
@@ -46,36 +47,62 @@ type GetFundTokenInput struct {
 // It decodes event parameters, composes workflow metadata, and posts signed events.
 func OnLog(cfg *workflows.Config, rt cre.Runtime, payload *evm.Log) (string, error) {
 
-	trigger := workflows.BuildTrigger(cfg.ChainID, payload)
-	event, err := workflows.BuildEvent(rt, cfg, payload)
+	event, err := workflows.BuildEVMEventFromLog(rt, cfg, payload)
 	if err != nil {
 		return "", err
+	}
+	if event == nil {
+		return "", fmt.Errorf("event is nil")
 	}
 
 	var referenceData *workflows.ReferenceData
 	if cfg.DetectEventTriggerConfig.ContractName == DTARequestManagement {
-		referenceData, err = buildReferenceDataFromDTARequestManagementEvent(rt, cfg, event)
+		referenceData, err = buildReferenceDataFromDTARequestManagementEvent(rt, cfg, *event)
 		if err != nil {
 			return "", err
 		}
-	} else if cfg.DetectEventTriggerConfig.ContractName == DTARequestSettlement && cfg.DetectEventTriggerConfig.ContractEventName == DTASettlementOpenedEventName {
-		referenceData, err = buildReferenceDataFromDTASettlementOpenedEvent(rt, cfg, trigger, event)
+	} else if cfg.DetectEventTriggerConfig.ContractName == DTARequestSettlement && event.EventSignature == DTASettlementOpenedEventSignature {
+		referenceData, err = buildReferenceDataFromDTASettlementOpenedEvent(rt, cfg, *event)
 		if err != nil {
 			return "", err
 		}
 	}
 
-	verifiableEvent, err := workflows.BuildAndHashVerifiableEvent(&WorkflowDomain, trigger, event, referenceData)
+	referenceDataBytes, err := json.Marshal(referenceData)
+	if err != nil {
+		return "", err
+	}
+	typeAndValue := workflows.TypeAndValue{
+		Type:  workflows.RawMessageTypeReferenceData,
+		Value: json.RawMessage(referenceDataBytes),
+	}
+	typeAndValueBytes, err := json.Marshal(typeAndValue)
+	if err != nil {
+		return "", err
+	}
+	var referenceDataMap map[string]interface{}
+	err = json.Unmarshal(typeAndValueBytes, &referenceDataMap)
+
+	eventSignatureParts := strings.Split(event.EventSignature, "(")
+	eventName := eventSignatureParts[0]
+	verifiableEvent, err := workflows.BuildVerifiableEventForEVMEvent(cfg, event, &WorkflowDomain, eventName, &referenceDataMap)
 	if err != nil {
 		return "", err
 	}
 
-	return workflows.GenerateAndPostReport(cfg, rt, verifiableEvent)
+	encodedVerifiableEvent, err := workflows.EncodeVerifiableEvent(verifiableEvent)
+	if err != nil {
+		return "", err
+	}
+
+	rt.Logger().Info("verifiableEvent", "encodedVerifiableEvent", encodedVerifiableEvent)
+
+	return workflows.SignAndPostVerifiableEvent(cfg, rt, verifiableEvent)
 }
 
-func buildReferenceDataFromDTARequestManagementEvent(rt cre.Runtime, cfg *workflows.Config, event workflows.Event) (*workflows.ReferenceData, error) {
+func buildReferenceDataFromDTARequestManagementEvent(rt cre.Runtime, cfg *workflows.Config, event apiModels.EVMEvent) (*workflows.ReferenceData, error) {
 	var onChainReferenceData []workflows.OnChainReferenceData
-	getDistributorRequestInput, err := buildGetDistributorRequestInputFromDTARequestManagementEvent(rt, cfg, event)
+	getDistributorRequestInput, err := buildGetDistributorRequestInputFromDTARequestManagementEvent(cfg, event)
 	if err != nil {
 		rt.Logger().Warn("failed to build getDistributorRequestInputFromDTARequestManagementEvent, skipping distributor request", "error", err)
 	}
@@ -117,10 +144,13 @@ func buildReferenceDataFromDTARequestManagementEvent(rt cre.Runtime, cfg *workfl
 	}, nil
 }
 
-func buildReferenceDataFromDTASettlementOpenedEvent(rt cre.Runtime, cfg *workflows.Config, trigger workflows.Trigger, event workflows.Event) (*workflows.ReferenceData, error) {
+func buildReferenceDataFromDTASettlementOpenedEvent(rt cre.Runtime, cfg *workflows.Config, event apiModels.EVMEvent) (*workflows.ReferenceData, error) {
+	if event.Params == nil {
+		return nil, fmt.Errorf("event params are nil")
+	}
 	var referenceData *workflows.ReferenceData
 	var onChainReferenceData []workflows.OnChainReferenceData
-	getDistributorRequestInput, err := buildGetDistributorRequestInputFromDTASettlementOpenedEvent(rt, cfg, event.Args)
+	getDistributorRequestInput, err := buildGetDistributorRequestInputFromDTASettlementOpenedEvent(cfg, *event.Params)
 	if err != nil {
 		return nil, err
 	}
@@ -134,7 +164,7 @@ func buildReferenceDataFromDTASettlementOpenedEvent(rt cre.Runtime, cfg *workflo
 		}
 	}
 
-	fundTokenDataRequest, err := buildFundTokenDataRequestFromDTASettlementOpenedEvent(rt, cfg, event.Args)
+	fundTokenDataRequest, err := buildFundTokenDataRequestFromDTASettlementOpenedEvent(cfg, *event.Params)
 	if err != nil {
 		return nil, err
 	}
@@ -153,8 +183,8 @@ func buildReferenceDataFromDTASettlementOpenedEvent(rt cre.Runtime, cfg *workflo
 			workflows.GetCurrencyCodeAsOffChainReferenceData(fundTokenData.PaymentInfo.OffChainPaymentCurrency),
 		},
 	}
-	if cfg.DetectEventTriggerConfig.ContractEventName == DTASettlementOpenedEventName {
-		paymentRequest, err := buildPaymentRequest(rt, cfg, trigger, event, fundTokenData)
+	if event.EventSignature == DTASettlementOpenedEventSignature {
+		paymentRequest, err := buildPaymentRequest(cfg, event, fundTokenData)
 		if err != nil {
 			return nil, err
 		}
@@ -172,7 +202,7 @@ func buildReferenceDataFromDTASettlementOpenedEvent(rt cre.Runtime, cfg *workflo
 	return referenceData, nil
 }
 
-func buildGetDistributorRequestInputFromDTASettlementOpenedEvent(rt cre.Runtime, cfg *workflows.Config, params map[string]any) (*GetDistributorRequestInput, error) {
+func buildGetDistributorRequestInputFromDTASettlementOpenedEvent(cfg *workflows.Config, params map[string]any) (*GetDistributorRequestInput, error) {
 	abiJSON, err := workflows.GetContractABI(cfg, DTARequestManagement)
 	if err != nil {
 		return nil, err
@@ -221,7 +251,7 @@ func buildGetDistributorRequestInputFromDTASettlementOpenedEvent(rt cre.Runtime,
 	}, nil
 }
 
-func buildGetDistributorRequestInputFromDTARequestManagementEvent(rt cre.Runtime, cfg *workflows.Config, event workflows.Event) (*GetDistributorRequestInput, error) {
+func buildGetDistributorRequestInputFromDTARequestManagementEvent(cfg *workflows.Config, event apiModels.EVMEvent) (*GetDistributorRequestInput, error) {
 	abiJSON, err := workflows.GetContractABI(cfg, DTARequestManagement)
 	if err != nil {
 		return nil, err
@@ -235,8 +265,13 @@ func buildGetDistributorRequestInputFromDTARequestManagementEvent(rt cre.Runtime
 		return nil, fmt.Errorf("getDistributorRequest method not found")
 	}
 
+	if event.Params == nil {
+		return nil, fmt.Errorf("event params are nil")
+	}
+	params := *event.Params
+
 	var requestIdBytes []byte
-	switch v := event.Args["request_id"].(type) {
+	switch v := params["request_id"].(type) {
 	case []byte:
 		requestIdBytes = v
 	case string:
@@ -255,7 +290,7 @@ func buildGetDistributorRequestInputFromDTARequestManagementEvent(rt cre.Runtime
 	return &GetDistributorRequestInput{
 		GetDistributorRequestMethod: getDistributorRequestMethod,
 		DtaChainSelector:            cfg.ChainSelector,
-		DtaAddr:                     event.ContractAddress,
+		DtaAddr:                     event.Address,
 		RequestId:                   requestIdBytes,
 	}, nil
 }
@@ -318,7 +353,7 @@ func fetchAndDecodeDistributorRequest(rt cre.Runtime, request GetDistributorRequ
 	}, nil
 }
 
-func buildFundTokenDataRequestFromDTASettlementOpenedEvent(rt cre.Runtime, cfg *workflows.Config, params map[string]any) (GetFundTokenInput, error) {
+func buildFundTokenDataRequestFromDTASettlementOpenedEvent(cfg *workflows.Config, params map[string]any) (GetFundTokenInput, error) {
 	abiJSON, err := workflows.GetContractABI(cfg, DTARequestManagement)
 	if err != nil {
 		return GetFundTokenInput{}, err
@@ -376,7 +411,7 @@ func buildFundTokenDataRequestFromDTASettlementOpenedEvent(rt cre.Runtime, cfg *
 	}, nil
 }
 
-func buildFundTokenDataRequestFromDTARequestManagementEvent(rt cre.Runtime, cfg *workflows.Config, event workflows.Event, distributorRequest *dtav1.DistributorRequest) (*GetFundTokenInput, error) {
+func buildFundTokenDataRequestFromDTARequestManagementEvent(rt cre.Runtime, cfg *workflows.Config, event apiModels.EVMEvent, distributorRequest *dtav1.DistributorRequest) (*GetFundTokenInput, error) {
 	abiJSON, err := workflows.GetContractABI(cfg, DTARequestManagement)
 	if err != nil {
 		return nil, err
@@ -391,11 +426,16 @@ func buildFundTokenDataRequestFromDTARequestManagementEvent(rt cre.Runtime, cfg 
 		return nil, fmt.Errorf("getFundToken method not found")
 	}
 
+	if event.Params == nil {
+		return nil, fmt.Errorf("event params are nil")
+	}
+	params := *event.Params
+
 	var fundAdminAddr string
 	if distributorRequest != nil {
 		fundAdminAddr = distributorRequest.FundAdminAddr.Hex()
 	} else {
-		fundAdminAddr, ok = event.Args["fund_admin_addr"].(string)
+		fundAdminAddr, ok = params["fund_admin_addr"].(string)
 		if !ok {
 			rt.Logger().Warn("fund_admin_addr not found or not a string, skipping getFundToken call")
 			return nil, nil
@@ -406,7 +446,7 @@ func buildFundTokenDataRequestFromDTARequestManagementEvent(rt cre.Runtime, cfg 
 	if distributorRequest != nil {
 		fundTokenId = distributorRequest.FundTokenId[:]
 	} else {
-		switch v := event.Args["fund_token_id"].(type) {
+		switch v := params["fund_token_id"].(type) {
 		case []byte:
 			fundTokenId = v
 		case string:
@@ -431,7 +471,7 @@ func buildFundTokenDataRequestFromDTARequestManagementEvent(rt cre.Runtime, cfg 
 	return &GetFundTokenInput{
 		GetFundTokenMethod: getFundTokenMethod,
 		DtaChainSelector:   cfg.ChainSelector,
-		DtaAddr:            event.ContractAddress,
+		DtaAddr:            event.Address,
 		FundAdminAddr:      fundAdminAddr,
 		FundTokenId:        fundTokenId,
 	}, nil
@@ -513,7 +553,7 @@ func fetchAndDecodeFundToken(rt cre.Runtime, request GetFundTokenInput) (workflo
 	}, nil
 }
 
-func buildPaymentRequest(rt cre.Runtime, cfg *workflows.Config, trigger workflows.Trigger, event workflows.Event, fundTokenData dtav1.FundTokenData) (workflows.PaymentRequest, error) {
+func buildPaymentRequest(cfg *workflows.Config, event apiModels.EVMEvent, fundTokenData dtav1.FundTokenData) (workflows.PaymentRequest, error) {
 	abiJSON, _ := workflows.GetContractABI(cfg, DTARequestSettlement)
 	parsedABI, err := gethAbi.JSON(strings.NewReader(abiJSON))
 	if err != nil {
@@ -525,9 +565,13 @@ func buildPaymentRequest(rt cre.Runtime, cfg *workflows.Config, trigger workflow
 		return workflows.PaymentRequest{}, fmt.Errorf("%s method not found", CompleteRequestProcessing)
 	}
 
-	expiration := event.BlockTimestamp.Unix() + int64(time.Hour)
+	expiration := int64(event.BlockTimestamp) + int64(time.Hour)
 
-	decodedEvent, err := decodeDTASettlementOpened(event.Args)
+	if event.Params == nil {
+		return workflows.PaymentRequest{}, fmt.Errorf("event params are nil")
+	}
+
+	decodedEvent, err := decodeDTASettlementOpened(*event.Params)
 	if err != nil {
 		return workflows.PaymentRequest{}, fmt.Errorf("failed to decode DTA settlement opened event: %w", err)
 	}
@@ -538,11 +582,11 @@ func buildPaymentRequest(rt cre.Runtime, cfg *workflows.Config, trigger workflow
 	var receiver string
 	switch decodedEvent.RequestType {
 	case dtav1.DistributorRequestTypeSubscription:
-		sender = decodedEvent.DistributorWalletAddr.Hex()
+		sender = decodedEvent.DistributorAddr.Hex()
 		receiver = decodedEvent.FundAdminAddr.Hex()
 	case dtav1.DistributorRequestTypeRedemption:
 		sender = decodedEvent.FundAdminAddr.Hex()
-		receiver = decodedEvent.DistributorWalletAddr.Hex()
+		receiver = decodedEvent.DistributorAddr.Hex()
 	default:
 		return workflows.PaymentRequest{}, fmt.Errorf("unknown request type: %d", decodedEvent.RequestType)
 	}
@@ -556,16 +600,16 @@ func buildPaymentRequest(rt cre.Runtime, cfg *workflows.Config, trigger workflow
 
 	return workflows.PaymentRequest{
 		ApplicationType: WorkflowDomain,
-		ApplicationAddr: event.ContractAddress,
+		ApplicationAddr: event.Address,
 		E2EID:           decodedEvent.RequestId.Hex(),
 		Sender:          sender,
 		Receiver:        receiver,
 		Currency:        currencyCode,
-		ChainID:         trigger.ChainID,
+		ChainID:         event.ChainId,
 		Amount:          amount,
 		Expiration:      &expiration,
 		CustomCallback: &workflows.PaymentCallback{
-			ContractAddress:   event.ContractAddress,
+			ContractAddress:   event.Address,
 			FunctionName:      CompleteRequestProcessing,
 			FunctionSignature: callbackMethod.Sig,
 		},

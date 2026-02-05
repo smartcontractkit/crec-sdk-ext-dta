@@ -6,10 +6,12 @@ import (
 	"encoding/json"
 	"math/big"
 	"testing"
+	"time"
 
 	"github.com/ethereum/go-ethereum/common"
 	workflows "github.com/smartcontractkit/cre-workflow-utils"
 	apiClient "github.com/smartcontractkit/crec-api-go/client"
+	apiModels "github.com/smartcontractkit/crec-api-go/models"
 	v1 "github.com/smartcontractkit/crec-sdk-ext-dta/v1"
 	"github.com/stretchr/testify/require"
 )
@@ -58,26 +60,61 @@ func buildWatcherEventPayload(eventName string, data map[string]any) apiClient.W
 		Type:  workflows.RawMessageTypeReferenceData,
 		Value: json.RawMessage(refDataBytes),
 	}
-	event := workflows.VerifiableEvent{
-		Event: workflows.Event{
-			EventName: eventName,
-			Args:      data,
-		},
-		Trigger: workflows.Trigger{
-			TxHash: "0xdeadbeef",
-		},
-		ReferenceData: &refDataTypeAndValue,
+	typeAndValueBytes, err := json.Marshal(refDataTypeAndValue)
+	if err != nil {
+		panic(err)
+	}
+	var eventData map[string]any
+	err = json.Unmarshal(typeAndValueBytes, &eventData)
+	if err != nil {
+		panic(err)
+	}
+
+	// Build an EVMEvent with the event params so it can be decoded with AsEVMEvent()
+	contractAddress := "0x1234567890123456789012345678901234567890"
+	txHash := common.HexToHash("0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890").Hex()
+	evmEvent := apiModels.EVMEvent{
+		Address:        contractAddress,
+		BlockNumber:    12345,
+		BlockTimestamp: uint64(time.Now().Unix()),
+		ChainId:        "1",
+		EventSignature: eventName + "()",
+		LogIndex:       0,
+		Params:         &data,
+		TopicHash:      common.HexToHash("0x1234567890123456789012345678901234567890123456789012345678901234").Hex(),
+		TxHash:         txHash,
+	}
+
+	// Create ChainEvent and set it using FromEVMEvent
+	chainEvent := &apiModels.VerifiableEvent_ChainEvent{}
+	if err := chainEvent.FromEVMEvent(evmEvent); err != nil {
+		panic(err)
+	}
+
+	chainFamily := "evm"
+	chainSelector := "1"
+	service := "test-service"
+	timestamp := time.Now()
+	event := apiModels.VerifiableEvent{
+		ChainEvent:    chainEvent,
+		ChainFamily:   &chainFamily,
+		ChainSelector: &chainSelector,
+		Data:          &eventData,
+		Name:          eventName,
+		Service:       &service,
+		Timestamp:     timestamp,
 	}
 	eventBytes, err := json.Marshal(event)
 	if err != nil {
 		panic(err)
 	}
+
+	// Generate a properly formed EventHash from the event data
+	eventHash := common.BytesToHash(eventBytes[:32]).Hex()
+
 	return apiClient.WatcherEventPayload{
-		Address:         "0x1234567890123456789012345678901234567890",
-		ChainSelector:   "1",
-		Name:            eventName,
+		EventHash:       eventHash,
 		VerifiableEvent: base64.StdEncoding.EncodeToString(eventBytes),
-		Type:            apiClient.WatcherEvent,
 		WatcherId:       "test-watcher",
 	}
 }
@@ -299,11 +336,9 @@ func TestDecodeFromEvent_DecodedEventFields(t *testing.T) {
 	require.NoError(t, err)
 
 	// Verify WatcherEventPayload fields are accessible directly
-	require.Equal(t, "1", result.ChainSelector)
-	require.Equal(t, payload.Address, result.Address)
-	require.Equal(t, payload.Name, result.Name)
-	require.Equal(t, payload.Domain, result.Domain)
 	require.Equal(t, payload.WatcherId, result.WatcherId)
+	require.Equal(t, payload.VerifiableEvent, result.VerifiableEvent)
+	require.Equal(t, payload.EventHash, result.EventHash)
 }
 
 // TestEventPayloadRoundTrip verifies that event payloads can be marshalled and unmarshalled
@@ -323,6 +358,7 @@ func TestEventPayloadRoundTrip(t *testing.T) {
 	err = json.Unmarshal(jsonBytes, &decodedPayload)
 	require.NoError(t, err)
 
-	require.Equal(t, originalPayload.Name, decodedPayload.Name)
-	require.Equal(t, originalPayload.Address, decodedPayload.Address)
+	require.Equal(t, originalPayload.WatcherId, decodedPayload.WatcherId)
+	require.Equal(t, originalPayload.VerifiableEvent, decodedPayload.VerifiableEvent)
+	require.Equal(t, originalPayload.EventHash, decodedPayload.EventHash)
 }

@@ -15,9 +15,10 @@ type ConcreteEvent interface{}
 // DecodedEvent wraps WatcherEventPayload with a decoded ConcreteEvent.
 type DecodedEvent struct {
 	apiClient.WatcherEventPayload
-	ConcreteEvent   ConcreteEvent
-	FundTokenData   *FundTokenData
-	PaymentRequests []workflows.PaymentRequest
+	ConcreteEvent      ConcreteEvent
+	FundTokenData      *FundTokenData
+	DistributorRequest *DistributorRequest
+	PaymentRequests    []workflows.PaymentRequest
 }
 
 // EventName returns the parsed event name from the payload.
@@ -84,11 +85,16 @@ func DecodeFromEvent(ctx context.Context, event apiClient.Event) (DecodedEvent, 
 	}
 
 	var fundTokenData *FundTokenData
+	var distributorRequest *DistributorRequest
 	var paymentRequests []workflows.PaymentRequest
 	if referenceData != nil {
 		fundTokenData, err = decodeFundTokenData(*referenceData)
 		if err != nil {
 			return DecodedEvent{}, fmt.Errorf("decode fundTokenData: %w", err)
+		}
+		distributorRequest, err = decodeDistributorRequest(*referenceData)
+		if err != nil {
+			return DecodedEvent{}, fmt.Errorf("decode distributorRequest: %w", err)
 		}
 		paymentRequests, err = decodePaymentRequests(*referenceData)
 		if err != nil {
@@ -100,6 +106,7 @@ func DecodeFromEvent(ctx context.Context, event apiClient.Event) (DecodedEvent, 
 		WatcherEventPayload: payload,
 		ConcreteEvent:       concrete,
 		FundTokenData:       fundTokenData,
+		DistributorRequest:  distributorRequest,
 		PaymentRequests:     paymentRequests,
 	}, nil
 }
@@ -128,6 +135,31 @@ func decodeFundTokenData(referenceData workflows.ReferenceData) (*FundTokenData,
 	}
 
 	return nil, fmt.Errorf("fundTokenData not found")
+}
+
+func decodeDistributorRequest(referenceData workflows.ReferenceData) (*DistributorRequest, error) {
+	for _, onChainReferenceData := range referenceData.OnChain {
+		if onChainReferenceData.Source.ContractFunctionSignature == DTARequestManagementABI().Methods["getDistributorRequest"].Sig {
+			distributorRequestRaw, ok := onChainReferenceData.Data["distributor_request"]
+			if !ok {
+				return nil, fmt.Errorf("distributor_request key not found in reference data")
+			}
+
+			distributorRequestBytes, err := json.Marshal(distributorRequestRaw)
+			if err != nil {
+				return nil, fmt.Errorf("failed to marshal distributor_request: %w", err)
+			}
+
+			var distributorRequest DistributorRequest
+			err = json.Unmarshal(distributorRequestBytes, &distributorRequest)
+			if err != nil {
+				return nil, fmt.Errorf("failed to unmarshal distributor_request: %w", err)
+			}
+
+			return &distributorRequest, nil
+		}
+	}
+	return nil, nil // distributor request is optional
 }
 
 func decodePaymentRequests(referenceData workflows.ReferenceData) ([]workflows.PaymentRequest, error) {

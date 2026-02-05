@@ -33,9 +33,9 @@ func TestWatcherV1_DTA_SimpleFlow_Post(t *testing.T) {
 		CourierURL:    "http://example.com",
 		ApiKeySecret:  "courier",
 		DetectEventTriggerConfig: workflows.DetectEventTriggerConfig{
-			ContractName:      "TransparentUpgradeableProxy",
-			ContractAddress:   "0x84eA74d481Ee0A5332c457a4d796187F6Ba67fEB",
-			ContractEventName: "FundAdminRegistered",
+			ContractName:       "TransparentUpgradeableProxy",
+			ContractAddress:    "0x84eA74d481Ee0A5332c457a4d796187F6Ba67fEB",
+			ContractEventNames: []string{"FundAdminRegistered"},
 			ContractReaderConfig: workflows.ContractReaderConfig{
 				Contracts: map[string]workflows.ContractDef{
 					"TransparentUpgradeableProxy": {
@@ -56,21 +56,9 @@ func TestWatcherV1_DTA_SimpleFlow_Post(t *testing.T) {
 
 	httpCap, err := httpmock.NewClientCapability(t)
 	require.NoError(t, err)
+	var httpCapResponse []byte
 	httpCap.SendRequest = func(_ context.Context, req *httpcap.Request) (*httpcap.Response, error) {
-		var body map[string]any
-		require.NoError(t, json.Unmarshal(req.Body, &body))
-		verStr := body["verifiable_event"].(string)
-		verBytes, _ := base64.StdEncoding.DecodeString(verStr)
-		var embedded map[string]any
-		require.NoError(t, json.Unmarshal(verBytes, &embedded))
-
-		ev := embedded["event"].(map[string]any)
-		require.Equal(t, service, embedded["domain"])
-		require.Equal(t, "FundAdminRegistered", ev["event_name"])
-
-		params := ev["args"].(map[string]any)
-		require.Equal(t, "0x0000000000000000000000000000000000000001", params["fund_admin_addr"])
-
+		httpCapResponse = req.Body
 		return &httpcap.Response{StatusCode: 200}, nil
 	}
 
@@ -89,4 +77,25 @@ func TestWatcherV1_DTA_SimpleFlow_Post(t *testing.T) {
 
 	_, err = wf.OnLog(cfg, rt, log)
 	require.NoError(t, err)
+
+	var body map[string]any
+	err = json.Unmarshal(httpCapResponse, &body)
+	require.NoError(t, err)
+
+	verStr, ok := body["verifiable_event"].(string)
+	require.True(t, ok)
+	verBytes, err := base64.StdEncoding.DecodeString(verStr)
+	require.NoError(t, err)
+	var embedded map[string]any
+	err = json.Unmarshal(verBytes, &embedded)
+	require.NoError(t, err)
+	require.Equal(t, service, embedded["service"])
+
+	ev, ok := embedded["chain_event"].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, "FundAdminRegistered(address)", ev["event_signature"])
+
+	params, ok := ev["params"].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, "0x0000000000000000000000000000000000000001", params["fund_admin_addr"])
 }

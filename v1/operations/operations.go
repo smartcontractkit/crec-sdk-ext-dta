@@ -1,4 +1,4 @@
-package v1
+package operations
 
 import (
 	"fmt"
@@ -6,6 +6,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 
+	"github.com/smartcontractkit/crec-sdk-ext-dta/v1/events"
 	"github.com/smartcontractkit/crec-sdk/interfaces/erc20"
 	transactTypes "github.com/smartcontractkit/crec-sdk/transact/types"
 )
@@ -60,7 +61,7 @@ func (e *Extension) PrepareRequestSubscriptionWithTokenApprovalOperation(
 // This function has a complex struct type that cannot be auto-generated.
 func (e *Extension) PrepareRegisterFundTokenOperation(
 	fundTokenId [32]byte,
-	tokenData FundTokenData,
+	tokenData events.FundTokenData,
 ) (*transactTypes.Operation, error) {
 	calldata, err := DTARequestManagementABI().Pack("registerFundToken", fundTokenId, tokenData)
 	if err != nil {

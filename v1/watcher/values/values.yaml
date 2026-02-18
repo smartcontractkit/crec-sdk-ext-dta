@@ -15,9 +15,19 @@ workflowName: "watcher-dta-v1"
 # CONFIG.YAML VALUES
 # ==========================================================================
 
+# Network and chain configuration
+network: "evm"
+chainId: "11155111"
+chainSelector: 16015286601757825753
+
+# Trigger configuration
+triggerContractName: "DTARequestSettlement"
+triggerContractAddress: "0x0000000000000000000000000000000000000000"
+triggerEventName: "DTASettlementOpened"
+
 # CREC service configuration
 courierUrl: "https://crec.chainlink.com"
-service: "dta"
+service: "dta.v1"
 watcherID: "00000000-0000-0000-0000-000000000000"
 
 # Contracts configuration

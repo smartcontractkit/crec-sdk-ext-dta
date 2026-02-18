@@ -34,7 +34,7 @@ const modulePath = "github.com/smartcontractkit/crec-sdk-ext-dta/v1"
 // ContractConfig defines a contract for code generation.
 type ContractConfig struct {
 	Name              string            // Contract name (e.g., "DTARequestManagement")
-	ABIFile           string            // Path to ABI file (e.g., "abi/DTARequestManagementU.abi.json")
+	ABIFile           string            // Path to ABI file (e.g., "watcher/bundle/DTARequestManagementU.abi.json")
 	SkipMethods       map[string]bool   // Methods to skip (e.g., internal, admin-only)
 	FuncNameOverrides map[string]string // Method name overrides (method -> custom name)
 }
@@ -43,7 +43,7 @@ type ContractConfig struct {
 var contracts = []ContractConfig{
 	{
 		Name:    "DTARequestManagement",
-		ABIFile: "abi/DTARequestManagementU.abi.json",
+		ABIFile: "watcher/bundle/DTARequestManagementU.abi.json",
 		SkipMethods: map[string]bool{
 			"ccipReceive":                      true,
 			"completeDistributorRequest":       true,
@@ -61,7 +61,7 @@ var contracts = []ContractConfig{
 	},
 	{
 		Name:    "DTARequestSettlement",
-		ABIFile: "abi/DTARequestSettlementU.abi.json",
+		ABIFile: "watcher/bundle/DTARequestSettlementU.abi.json",
 		SkipMethods: map[string]bool{
 			"ccipReceive":            true,
 			"ccipHandleDTAMessage":   true,
@@ -100,6 +100,32 @@ var enumTypeMapping = map[string]string{
 	"enum IDTAMessage.RequestStatus":           "RequestStatus",
 	"enum IDTARequestSettlement.TokenMintType": "TokenMintType",
 	"enum IDTARequestSettlement.TokenBurnType": "TokenBurnType",
+}
+
+// -----------------------------------------------------------------------------
+// Bundle Events Configuration
+// -----------------------------------------------------------------------------
+// Defines which events are exposed to users via the watcher bundle.
+// ParamsSchema is auto-generated from the ABI; only metadata is specified here.
+
+type BundleEventConfig struct {
+	Name            string
+	TriggerContract string
+	Description     string
+}
+
+var bundleEvents = []BundleEventConfig{
+	{Name: "DistributorRegistered", TriggerContract: "DTARequestManagement", Description: "New distributor registered"},
+	{Name: "DistributorRequestCanceled", TriggerContract: "DTARequestManagement", Description: "Distributor request canceled"},
+	{Name: "DistributorRequestProcessed", TriggerContract: "DTARequestManagement", Description: "Distributor request completed"},
+	{Name: "DistributorRequestProcessing", TriggerContract: "DTARequestManagement", Description: "Distributor request being processed"},
+	{Name: "FundAdminRegistered", TriggerContract: "DTARequestManagement", Description: "New fund admin registered"},
+	{Name: "FundTokenAllowlistUpdated", TriggerContract: "DTARequestManagement", Description: "Fund token allowlist updated"},
+	{Name: "FundTokenRegistered", TriggerContract: "DTARequestManagement", Description: "New fund token created"},
+	{Name: "RedemptionRequested", TriggerContract: "DTARequestManagement", Description: "Redemption request"},
+	{Name: "SubscriptionRequested", TriggerContract: "DTARequestManagement", Description: "Subscription request"},
+	{Name: "DTASettlementOpened", TriggerContract: "DTARequestSettlement", Description: "DTA settlement initiated"},
+	{Name: "DTASettlementClosed", TriggerContract: "DTARequestSettlement", Description: "DTA settlement completed or failed"},
 }
 
 // -----------------------------------------------------------------------------

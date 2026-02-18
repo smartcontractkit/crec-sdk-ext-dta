@@ -7,36 +7,37 @@ import (
 
 	workflows "github.com/smartcontractkit/cre-workflow-utils"
 	apiClient "github.com/smartcontractkit/crec-api-go/client"
+	"github.com/smartcontractkit/crec-sdk-ext-dta/v1/events"
 )
 
-// ConcreteEvent represents any decoded concrete event payload.
-type ConcreteEvent interface{}
+// Solidity method signatures used to match on-chain reference data.
+// These are deterministic from the ABI and kept as constants to avoid
+// importing the heavy go-ethereum/accounts/abi package.
+const (
+	getFundTokenSig           = "getFundToken(address,bytes32)"
+	getDistributorRequestSig  = "getDistributorRequest(bytes32)"
+)
 
 // DecodedEvent wraps WatcherEventPayload with a decoded ConcreteEvent.
 type DecodedEvent struct {
 	apiClient.WatcherEventPayload
-	ConcreteEvent      ConcreteEvent
-	FundTokenData      *FundTokenData
-	DistributorRequest *DistributorRequest
+	ConcreteEvent      events.ConcreteEvent
+	FundTokenData      *events.FundTokenData
+	DistributorRequest *events.DistributorRequest
 	PaymentRequests    []workflows.PaymentRequest
 }
 
 // EventName returns the parsed event name from the payload.
-func (e DecodedEvent) EventName() EventName {
+func (e DecodedEvent) EventName() events.EventName {
 	verifiableEvent, err := workflows.DecodeVerifiableEvent(e.WatcherEventPayload.VerifiableEvent)
 	if err != nil || verifiableEvent == nil {
-		return EventUnknown
+		return events.EventUnknown
 	}
-	name, ok := parseEventName(verifiableEvent.Name)
+	name, ok := events.ParseEventName(verifiableEvent.Name)
 	if !ok {
-		return EventUnknown
+		return events.EventUnknown
 	}
 	return name
-}
-
-// EventDecoders returns the map of event decoders for external use.
-func EventDecoders() map[EventName]eventDecoder {
-	return eventDecoders
 }
 
 // DecodeFromEvent extracts the WatcherEventPayload from an apiClient.Event and decodes
@@ -55,11 +56,12 @@ func DecodeFromEvent(ctx context.Context, event apiClient.Event) (DecodedEvent, 
 		return DecodedEvent{}, fmt.Errorf("verifiable event is nil")
 	}
 
-	name, ok := parseEventName(verifiableEvent.Name)
+	name, ok := events.ParseEventName(verifiableEvent.Name)
 	if !ok {
 		return DecodedEvent{}, fmt.Errorf("unsupported event name: %s", verifiableEvent.Name)
 	}
-	decoder, ok := eventDecoders[name]
+	decoders := events.EventDecoders()
+	decoder, ok := decoders[name]
 	if !ok {
 		return DecodedEvent{}, fmt.Errorf("unsupported event decoder for event name: %s", name)
 	}
@@ -84,8 +86,8 @@ func DecodeFromEvent(ctx context.Context, event apiClient.Event) (DecodedEvent, 
 		return DecodedEvent{}, fmt.Errorf("decode reference data: %w", err)
 	}
 
-	var fundTokenData *FundTokenData
-	var distributorRequest *DistributorRequest
+	var fundTokenData *events.FundTokenData
+	var distributorRequest *events.DistributorRequest
 	var paymentRequests []workflows.PaymentRequest
 	if referenceData != nil {
 		fundTokenData, err = decodeFundTokenData(*referenceData)
@@ -111,9 +113,9 @@ func DecodeFromEvent(ctx context.Context, event apiClient.Event) (DecodedEvent, 
 	}, nil
 }
 
-func decodeFundTokenData(referenceData workflows.ReferenceData) (*FundTokenData, error) {
+func decodeFundTokenData(referenceData workflows.ReferenceData) (*events.FundTokenData, error) {
 	for _, onChainReferenceData := range referenceData.OnChain {
-		if onChainReferenceData.Source.ContractFunctionSignature == DTARequestManagementABI().Methods["getFundToken"].Sig {
+		if onChainReferenceData.Source.ContractFunctionSignature == getFundTokenSig {
 			fundTokenDataRaw, ok := onChainReferenceData.Data["fund_token_data"]
 			if !ok {
 				return nil, fmt.Errorf("fund_token_data key not found in reference data")
@@ -124,7 +126,7 @@ func decodeFundTokenData(referenceData workflows.ReferenceData) (*FundTokenData,
 				return nil, fmt.Errorf("failed to marshal fund_token_data: %w", err)
 			}
 
-			var fundTokenData FundTokenData
+			var fundTokenData events.FundTokenData
 			err = json.Unmarshal(fundTokenDataBytes, &fundTokenData)
 			if err != nil {
 				return nil, fmt.Errorf("failed to unmarshal fund_token_data: %w", err)
@@ -137,9 +139,9 @@ func decodeFundTokenData(referenceData workflows.ReferenceData) (*FundTokenData,
 	return nil, fmt.Errorf("fundTokenData not found")
 }
 
-func decodeDistributorRequest(referenceData workflows.ReferenceData) (*DistributorRequest, error) {
+func decodeDistributorRequest(referenceData workflows.ReferenceData) (*events.DistributorRequest, error) {
 	for _, onChainReferenceData := range referenceData.OnChain {
-		if onChainReferenceData.Source.ContractFunctionSignature == DTARequestManagementABI().Methods["getDistributorRequest"].Sig {
+		if onChainReferenceData.Source.ContractFunctionSignature == getDistributorRequestSig {
 			distributorRequestRaw, ok := onChainReferenceData.Data["distributor_request"]
 			if !ok {
 				return nil, fmt.Errorf("distributor_request key not found in reference data")
@@ -150,7 +152,7 @@ func decodeDistributorRequest(referenceData workflows.ReferenceData) (*Distribut
 				return nil, fmt.Errorf("failed to marshal distributor_request: %w", err)
 			}
 
-			var distributorRequest DistributorRequest
+			var distributorRequest events.DistributorRequest
 			err = json.Unmarshal(distributorRequestBytes, &distributorRequest)
 			if err != nil {
 				return nil, fmt.Errorf("failed to unmarshal distributor_request: %w", err)

@@ -13,6 +13,7 @@ import (
 	apiClient "github.com/smartcontractkit/crec-api-go/client"
 	apiModels "github.com/smartcontractkit/crec-api-go/models"
 	v1 "github.com/smartcontractkit/crec-sdk-ext-dta/v1"
+	"github.com/smartcontractkit/crec-sdk-ext-dta/v1/events"
 	"github.com/stretchr/testify/require"
 )
 
@@ -23,13 +24,13 @@ func buildWatcherEventPayload(eventName string, data map[string]any) apiClient.W
 			{
 				Source: workflows.OnChainReferenceDataSource{
 					ContractAddress:           "0x1234567890123456789012345678901234567890",
-					ContractFunctionSignature: v1.DTARequestManagementABI().Methods["getFundToken"].Sig,
+					ContractFunctionSignature: "getFundToken(address,bytes32)",
 					CallData:                  "0x1234567890123456789012345678901234567890",
 					Block:                     "latest",
 				},
 				Data: map[string]any{
 					"enabled": true,
-					"fund_token_data": v1.FundTokenData{
+					"fund_token_data": events.FundTokenData{
 						FundTokenAddr:                 common.HexToAddress("0x1234567890123456789012345678901234567890"),
 						NavFeedDecimals:               18,
 						PurchaseTokenRoundingDecimals: 18,
@@ -42,7 +43,7 @@ func buildWatcherEventPayload(eventName string, data map[string]any) apiClient.W
 						DtaRequestSettlementAddr:      common.HexToAddress("0x1234567890123456789012345678901234567890"),
 						TimezoneOffsetSecs:            big.NewInt(0),
 						NavTTL:                        big.NewInt(0),
-						PaymentInfo: v1.DTAPayment{
+						PaymentInfo: events.DTAPayment{
 							OffChainPaymentCurrency: 147,
 							PaymentTokenSourceAddr:  common.HexToAddress("0x0000000000000000000000000000000000000000"),
 							PaymentTokenDestAddr:    common.HexToAddress("0x0000000000000000000000000000000000000000"),
@@ -70,7 +71,6 @@ func buildWatcherEventPayload(eventName string, data map[string]any) apiClient.W
 		panic(err)
 	}
 
-	// Build an EVMEvent with the event params so it can be decoded with AsEVMEvent()
 	contractAddress := "0x1234567890123456789012345678901234567890"
 	txHash := common.HexToHash("0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890").Hex()
 	evmEvent := apiModels.EVMEvent{
@@ -85,7 +85,6 @@ func buildWatcherEventPayload(eventName string, data map[string]any) apiClient.W
 		TxHash:         txHash,
 	}
 
-	// Create ChainEvent and set it using FromEVMEvent
 	chainEvent := &apiModels.VerifiableEvent_ChainEvent{}
 	if err := chainEvent.FromEVMEvent(evmEvent); err != nil {
 		panic(err)
@@ -109,7 +108,6 @@ func buildWatcherEventPayload(eventName string, data map[string]any) apiClient.W
 		panic(err)
 	}
 
-	// Generate a properly formed EventHash from the event data
 	eventHash := common.BytesToHash(eventBytes[:32]).Hex()
 
 	return apiClient.WatcherEventPayload{
@@ -119,7 +117,6 @@ func buildWatcherEventPayload(eventName string, data map[string]any) apiClient.W
 	}
 }
 
-// buildEvent creates an apiClient.Event from a WatcherEventPayload
 func buildEvent(t *testing.T, payload apiClient.WatcherEventPayload) apiClient.Event {
 	t.Helper()
 
@@ -134,15 +131,15 @@ func TestDecodeFromEvent_DistributorRegistered(t *testing.T) {
 		"distributor_addr": "0x00000000000000000000000000000000000000aa",
 	}
 
-	payload := buildWatcherEventPayload(v1.EventDistributorRegistered.String(), data)
+	payload := buildWatcherEventPayload(events.EventDistributorRegistered.String(), data)
 	event := buildEvent(t, payload)
 
 	result, err := v1.DecodeFromEvent(context.Background(), event)
 	require.NoError(t, err)
 
-	require.Equal(t, v1.EventDistributorRegistered, result.EventName())
+	require.Equal(t, events.EventDistributorRegistered, result.EventName())
 
-	concrete, ok := result.ConcreteEvent.(*v1.DistributorRegistered)
+	concrete, ok := result.ConcreteEvent.(*events.DistributorRegistered)
 	require.True(t, ok, "expected *DistributorRegistered, got %T", result.ConcreteEvent)
 	require.Equal(t, common.HexToAddress("0x00000000000000000000000000000000000000aa"), concrete.DistributorAddr)
 }
@@ -155,21 +152,21 @@ func TestDecodeFromEvent_DistributorRequestProcessed(t *testing.T) {
 		"error":      "some-bytes",
 	}
 
-	payload := buildWatcherEventPayload(v1.EventDistributorRequestProcessed.String(), data)
+	payload := buildWatcherEventPayload(events.EventDistributorRequestProcessed.String(), data)
 	event := buildEvent(t, payload)
 
 	result, err := v1.DecodeFromEvent(context.Background(), event)
 	require.NoError(t, err)
 
-	require.Equal(t, v1.EventDistributorRequestProcessed, result.EventName())
+	require.Equal(t, events.EventDistributorRequestProcessed, result.EventName())
 
-	concrete, ok := result.ConcreteEvent.(*v1.DistributorRequestProcessed)
+	concrete, ok := result.ConcreteEvent.(*events.DistributorRequestProcessed)
 	require.True(t, ok, "expected *DistributorRequestProcessed, got %T", result.ConcreteEvent)
 	require.Equal(t, common.HexToHash("0x01"), concrete.RequestId)
 
 	expectedShares, _ := new(big.Int).SetString("12345678901234567890", 10)
 	require.Equal(t, expectedShares, concrete.Shares)
-	require.Equal(t, v1.RequestStatus(7), concrete.Status)
+	require.Equal(t, events.RequestStatus(7), concrete.Status)
 	require.Equal(t, []byte("some-bytes"), concrete.Error)
 }
 
@@ -182,15 +179,15 @@ func TestDecodeFromEvent_SubscriptionRequested(t *testing.T) {
 		"created_at":       "12345",
 	}
 
-	payload := buildWatcherEventPayload(v1.EventSubscriptionRequested.String(), data)
+	payload := buildWatcherEventPayload(events.EventSubscriptionRequested.String(), data)
 	event := buildEvent(t, payload)
 
 	result, err := v1.DecodeFromEvent(context.Background(), event)
 	require.NoError(t, err)
 
-	require.Equal(t, v1.EventSubscriptionRequested, result.EventName())
+	require.Equal(t, events.EventSubscriptionRequested, result.EventName())
 
-	concrete, ok := result.ConcreteEvent.(*v1.SubscriptionRequested)
+	concrete, ok := result.ConcreteEvent.(*events.SubscriptionRequested)
 	require.True(t, ok, "expected *SubscriptionRequested, got %T", result.ConcreteEvent)
 	require.Equal(t, common.HexToHash("0x02"), concrete.FundTokenId)
 	require.Equal(t, common.HexToAddress("0x00000000000000000000000000000000000000aa"), concrete.DistributorAddr)
@@ -209,35 +206,35 @@ func TestDecodeFromEvent_ScientificNotation(t *testing.T) {
 	}{
 		{
 			name:           "Scientific notation amount",
-			eventType:      v1.EventSubscriptionRequested.String(),
+			eventType:      events.EventSubscriptionRequested.String(),
 			amountValue:    "1.2e+21",
 			expectedAmount: "1200000000000000000000",
 			expectError:    false,
 		},
 		{
 			name:           "Large scientific notation",
-			eventType:      v1.EventSubscriptionRequested.String(),
+			eventType:      events.EventSubscriptionRequested.String(),
 			amountValue:    "5e18",
 			expectedAmount: "5000000000000000000",
 			expectError:    false,
 		},
 		{
 			name:           "Decimal amount with zeros",
-			eventType:      v1.EventSubscriptionRequested.String(),
+			eventType:      events.EventSubscriptionRequested.String(),
 			amountValue:    "600000000000000000000.000000",
 			expectedAmount: "600000000000000000000",
 			expectError:    false,
 		},
 		{
 			name:           "Simple decimal (non-zero fractional) should fail",
-			eventType:      v1.EventSubscriptionRequested.String(),
+			eventType:      events.EventSubscriptionRequested.String(),
 			amountValue:    "123.456",
 			expectedAmount: "",
 			expectError:    true,
 		},
 		{
 			name:           "Invalid amount should fail",
-			eventType:      v1.EventSubscriptionRequested.String(),
+			eventType:      events.EventSubscriptionRequested.String(),
 			amountValue:    "invalid-amount",
 			expectedAmount: "",
 			expectError:    true,
@@ -266,7 +263,7 @@ func TestDecodeFromEvent_ScientificNotation(t *testing.T) {
 
 			require.NoError(t, err)
 
-			concrete, ok := result.ConcreteEvent.(*v1.SubscriptionRequested)
+			concrete, ok := result.ConcreteEvent.(*events.SubscriptionRequested)
 			require.True(t, ok)
 
 			expected := new(big.Int)
@@ -290,9 +287,7 @@ func TestDecodeFromEvent_UnsupportedEvent(t *testing.T) {
 }
 
 func TestDecodeFromEvent_InvalidPayload(t *testing.T) {
-	// Create an event with an invalid payload type
 	var event apiClient.Event
-	// Set an invalid/empty payload
 	event.Payload = apiClient.Event_Payload{}
 
 	_, err := v1.DecodeFromEvent(context.Background(), event)
@@ -308,15 +303,15 @@ func TestDecodeFromEvent_RedemptionRequested(t *testing.T) {
 		"created_at":       "54321",
 	}
 
-	payload := buildWatcherEventPayload(v1.EventRedemptionRequested.String(), data)
+	payload := buildWatcherEventPayload(events.EventRedemptionRequested.String(), data)
 	event := buildEvent(t, payload)
 
 	result, err := v1.DecodeFromEvent(context.Background(), event)
 	require.NoError(t, err)
 
-	require.Equal(t, v1.EventRedemptionRequested, result.EventName())
+	require.Equal(t, events.EventRedemptionRequested, result.EventName())
 
-	concrete, ok := result.ConcreteEvent.(*v1.RedemptionRequested)
+	concrete, ok := result.ConcreteEvent.(*events.RedemptionRequested)
 	require.True(t, ok, "expected *RedemptionRequested, got %T", result.ConcreteEvent)
 
 	expectedShares := new(big.Int)
@@ -329,31 +324,27 @@ func TestDecodeFromEvent_DecodedEventFields(t *testing.T) {
 		"distributor_addr": "0x00000000000000000000000000000000000000cc",
 	}
 
-	payload := buildWatcherEventPayload(v1.EventDistributorRegistered.String(), data)
+	payload := buildWatcherEventPayload(events.EventDistributorRegistered.String(), data)
 	event := buildEvent(t, payload)
 
 	result, err := v1.DecodeFromEvent(context.Background(), event)
 	require.NoError(t, err)
 
-	// Verify WatcherEventPayload fields are accessible directly
 	require.Equal(t, payload.WatcherId, result.WatcherId)
 	require.Equal(t, payload.VerifiableEvent, result.VerifiableEvent)
 	require.Equal(t, payload.EventHash, result.EventHash)
 }
 
-// TestEventPayloadRoundTrip verifies that event payloads can be marshalled and unmarshalled
 func TestEventPayloadRoundTrip(t *testing.T) {
 	data := map[string]interface{}{
 		"distributor_addr": "0x00000000000000000000000000000000000000aa",
 	}
 
-	originalPayload := buildWatcherEventPayload(v1.EventDistributorRegistered.String(), data)
+	originalPayload := buildWatcherEventPayload(events.EventDistributorRegistered.String(), data)
 
-	// Marshal to JSON
 	jsonBytes, err := json.Marshal(originalPayload)
 	require.NoError(t, err)
 
-	// Unmarshal back
 	var decodedPayload apiClient.WatcherEventPayload
 	err = json.Unmarshal(jsonBytes, &decodedPayload)
 	require.NoError(t, err)

@@ -127,6 +127,43 @@ var eventTypeMapping = map[string]string{
 }
 
 // =============================================================================
+// Type Mappings (Solidity -> JSON Schema)
+// =============================================================================
+
+// Maps Solidity types to JSON Schema type+description used in bundle event schemas.
+type jsonSchemaType struct {
+	Type        string
+	Description string // appended to field description
+}
+
+var jsonSchemaTypeMapping = map[string]jsonSchemaType{
+	"address": {Type: "string"},
+	"bool":    {Type: "boolean"},
+	"bytes":   {Type: "string", Description: "hex bytes"},
+	"bytes4":  {Type: "string", Description: "bytes4 hex"},
+	"bytes32": {Type: "string", Description: "bytes32 hex"},
+	"string":  {Type: "string"},
+	"uint8":   {Type: "integer"},
+	"uint16":  {Type: "integer"},
+	"uint24":  {Type: "integer"},
+	"int24":   {Type: "integer"},
+	"uint32":  {Type: "integer"},
+	"uint40":  {Type: "integer"},
+	"uint64":  {Type: "string", Description: "uint64"},
+	"uint128": {Type: "string", Description: "uint128"},
+	"uint256": {Type: "string", Description: "uint256"},
+	"int128":  {Type: "string", Description: "int128"},
+	"int256":  {Type: "string", Description: "int256"},
+}
+
+func mapToJSONSchemaType(solType string) jsonSchemaType {
+	if t, ok := jsonSchemaTypeMapping[solType]; ok {
+		return t
+	}
+	return jsonSchemaType{Type: "string"}
+}
+
+// =============================================================================
 // Main Entry Point
 // =============================================================================
 
@@ -138,8 +175,12 @@ func main() {
 	var allFuncs []FunctionDef
 	var allEvents []EventDef
 
+	// Build a map of contract name -> ABI JSON for bundle schema generation
+	contractABIs := make(map[string]string)
+
 	for _, contract := range contracts {
 		abiJSON := loadABI(contract.ABIFile, contract.Name)
+		contractABIs[contract.Name] = abiJSON
 		helperMethod := deriveHelperMethod(contract.Name)
 
 		// Parse functions with per-contract overrides
@@ -172,6 +213,7 @@ func main() {
 	generateEventsFile(allEvents)
 	generateDecodersFile(allEvents)
 	generateWatcherValuesFiles(contracts)
+	generateBundleParamsSchemaFile(contractABIs)
 
 	fmt.Println("==================================")
 	fmt.Println("Code generation complete!")
@@ -225,7 +267,7 @@ func loadABI(path, contractName string) string {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "ERROR: Failed to read %s ABI from %s: %v\n", contractName, path, err)
-		fmt.Fprintf(os.Stderr, "       Make sure the ABI file exists in the abi/ directory.\n")
+		fmt.Fprintf(os.Stderr, "       Make sure the ABI file exists in the watcher/bundle/ directory.\n")
 		os.Exit(1)
 	}
 	fmt.Printf("✓ Loaded %s ABI from %s\n", contractName, path)
@@ -1234,7 +1276,7 @@ chainSelector: 16015286601757825753
 
 # CREC service configuration
 courierUrl: "https://crec.chainlink.com"
-service: "dta"
+service: "dta.v1"
 watcherID: "00000000-0000-0000-0000-000000000000"
 
 # Contract configuration (from ABI)
@@ -1365,7 +1407,7 @@ func generateCombinedWatcherValuesFile(contractConfigs []ContractConfig) {
 		ChainId:             "11155111",
 		ChainSelector:       16015286601757825753,
 		CourierUrl:          "https://crec.chainlink.com",
-		Service:             "dta",
+		Service:             "dta.v1",
 		WatcherID:           "00000000-0000-0000-0000-000000000000",
 		TriggerContractName: "", // Must be specified by user
 		TriggerEventName:    "", // Must be specified by user
@@ -1422,4 +1464,150 @@ contracts:
 	}
 
 	fmt.Printf("✓ Generated %s with %d contracts\n", outputPath, len(contractsData))
+}
+
+// =============================================================================
+// Code Generation: Bundle Params Schema
+// =============================================================================
+
+type bundleSchemaProperty struct {
+	Key         string
+	Type        string
+	Description string
+}
+
+type bundleSchemaEvent struct {
+	Name       string
+	Properties []bundleSchemaProperty
+	Required   []string
+}
+
+func generateBundleParamsSchemaFile(contractABIs map[string]string) {
+	if len(bundleEvents) == 0 {
+		fmt.Println("⊘ No bundle events configured, skipping params schema generation")
+		return
+	}
+
+	// Build a map of event name -> ABI inputs for each contract
+	type abiEventInfo struct {
+		Inputs []ABIComponent
+	}
+	allABIEvents := make(map[string]abiEventInfo)
+
+	for contractName, abiJSON := range contractABIs {
+		var entries []ABIEntry
+		if err := json.Unmarshal([]byte(abiJSON), &entries); err != nil {
+			fmt.Fprintf(os.Stderr, "ERROR: Failed to parse %s ABI for bundle schema: %v\n", contractName, err)
+			os.Exit(1)
+		}
+		for _, entry := range entries {
+			if entry.Type == "event" {
+				allABIEvents[entry.Name] = abiEventInfo{Inputs: entry.Inputs}
+			}
+		}
+	}
+
+	// Generate JSON Schema for each bundle event
+	var schemaEvents []bundleSchemaEvent
+	for _, be := range bundleEvents {
+		abiEvent, ok := allABIEvents[be.Name]
+		if !ok {
+			fmt.Fprintf(os.Stderr, "WARNING: Bundle event %q not found in any ABI, skipping\n", be.Name)
+			continue
+		}
+
+		var props []bundleSchemaProperty
+		var required []string
+
+		for _, input := range abiEvent.Inputs {
+			jsonTag := toSnakeCase(input.Name)
+			jsType := mapToJSONSchemaType(input.Type)
+
+			desc := ""
+			if jsType.Description != "" {
+				desc = jsType.Description
+			}
+
+			props = append(props, bundleSchemaProperty{
+				Key:         jsonTag,
+				Type:        jsType.Type,
+				Description: desc,
+			})
+			required = append(required, jsonTag)
+		}
+
+		schemaEvents = append(schemaEvents, bundleSchemaEvent{
+			Name:       be.Name,
+			Properties: props,
+			Required:   required,
+		})
+	}
+
+	// Build the output Go source manually (JSON inside Go strings is tricky with templates)
+	var buf bytes.Buffer
+	buf.WriteString("// Code generated by gen/main.go. DO NOT EDIT.\n\n")
+	buf.WriteString("package bundle\n\n")
+	buf.WriteString("import \"encoding/json\"\n\n")
+	buf.WriteString("// ParamsSchemas maps event names to their auto-generated JSON Schema\n")
+	buf.WriteString("// derived from the Solidity ABI event parameters.\n")
+	buf.WriteString("var ParamsSchemas = map[string]json.RawMessage{\n")
+
+	for _, evt := range schemaEvents {
+		// Build the JSON Schema string
+		var schemaBuf bytes.Buffer
+		schemaBuf.WriteString(`{"type":"object","properties":{`)
+		for i, prop := range evt.Properties {
+			if i > 0 {
+				schemaBuf.WriteString(",")
+			}
+			schemaBuf.WriteString(`"`)
+			schemaBuf.WriteString(prop.Key)
+			schemaBuf.WriteString(`":{"type":"`)
+			schemaBuf.WriteString(prop.Type)
+			schemaBuf.WriteString(`"`)
+			if prop.Description != "" {
+				schemaBuf.WriteString(`,"description":"`)
+				schemaBuf.WriteString(prop.Description)
+				schemaBuf.WriteString(`"`)
+			}
+			schemaBuf.WriteString(`}`)
+		}
+		schemaBuf.WriteString(`},"required":[`)
+		for i, r := range evt.Required {
+			if i > 0 {
+				schemaBuf.WriteString(",")
+			}
+			schemaBuf.WriteString(`"`)
+			schemaBuf.WriteString(r)
+			schemaBuf.WriteString(`"`)
+		}
+		schemaBuf.WriteString(`]}`)
+
+		// Pretty-print the JSON for readability
+		var prettyBuf bytes.Buffer
+		if err := json.Indent(&prettyBuf, schemaBuf.Bytes(), "\t\t", "\t"); err != nil {
+			fmt.Fprintf(os.Stderr, "ERROR: Failed to format JSON schema for %s: %v\n", evt.Name, err)
+			os.Exit(1)
+		}
+
+		buf.WriteString(fmt.Sprintf("\t%q: json.RawMessage(`\n\t\t%s\n\t`),\n", evt.Name, prettyBuf.String()))
+	}
+
+	buf.WriteString("}\n")
+
+	formatted, err := format.Source(buf.Bytes())
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "ERROR: Failed to format bundle params schema code: %v\n", err)
+		fmt.Fprintln(os.Stderr, "Raw code:")
+		fmt.Fprintln(os.Stderr, buf.String())
+		os.Exit(1)
+	}
+
+	outputPath := "watcher/bundle/params_schema_gen.go"
+	if err := os.WriteFile(outputPath, formatted, 0644); err != nil {
+		fmt.Fprintf(os.Stderr, "ERROR: Failed to write bundle params schema file: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Printf("✓ Generated %s with %d event schemas\n", outputPath, len(schemaEvents))
 }

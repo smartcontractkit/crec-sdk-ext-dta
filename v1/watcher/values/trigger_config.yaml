@@ -1,9 +1,0 @@
-# ==========================================================================
-# WATCHER TRIGGER CONFIGURATION
-# ==========================================================================
-network: "evm"
-chainId: "11155111"
-chainSelector: 16015286601757825753
-triggerContractName: "DTARequestSettlement"
-triggerContractAddress: "0x0000000000000000000000000000000000000000"
-triggerEventName: "DTASettlementOpened"

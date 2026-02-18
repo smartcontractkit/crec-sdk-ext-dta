@@ -17,15 +17,16 @@ import (
 	"github.com/smartcontractkit/cre-sdk-go/cre"
 	workflows "github.com/smartcontractkit/cre-workflow-utils"
 	apiModels "github.com/smartcontractkit/crec-api-go/models"
-	dtav1 "github.com/smartcontractkit/crec-sdk-ext-dta/v1"
+	dtaevents "github.com/smartcontractkit/crec-sdk-ext-dta/v1/events"
 )
 
 var (
 	CompleteRequestProcessing         string = "completeRequestProcessing"
 	DTARequestManagement              string = "DTARequestManagement"
 	DTARequestSettlement              string = "DTARequestSettlement"
-	DTASettlementOpenedEventSignature string = "DTASettlementOpened(address,uint8,bytes32,address,uint64,address,bytes32,address,uint256,uint256,uint8)"
-	WorkflowDomain                    string = "dta"
+	DTASettlementOpenedEventSignature string = "DTASettlementOpened(address,bytes32,uint8,address,uint64,address,bytes32,address,uint256,uint256,uint8)"
+	DTASettlementClosedEventSignature string = "DTASettlementClosed(address,bytes32,uint8,address,uint64,address,bytes32,bool,bytes)"
+	WorkflowService                    string = "dta.v1"
 )
 
 type GetDistributorRequestInput struct {
@@ -61,8 +62,9 @@ func OnLog(cfg *workflows.Config, rt cre.Runtime, payload *evm.Log) (string, err
 		if err != nil {
 			return "", err
 		}
-	} else if cfg.DetectEventTriggerConfig.ContractName == DTARequestSettlement && event.EventSignature == DTASettlementOpenedEventSignature {
-		referenceData, err = buildReferenceDataFromDTASettlementOpenedEvent(rt, cfg, *event)
+	} else if cfg.DetectEventTriggerConfig.ContractName == DTARequestSettlement &&
+		(event.EventSignature == DTASettlementOpenedEventSignature || event.EventSignature == DTASettlementClosedEventSignature) {
+		referenceData, err = buildReferenceDataFromDTASettlementEvent(rt, cfg, *event)
 		if err != nil {
 			return "", err
 		}
@@ -83,9 +85,16 @@ func OnLog(cfg *workflows.Config, rt cre.Runtime, payload *evm.Log) (string, err
 	var referenceDataMap map[string]interface{}
 	err = json.Unmarshal(typeAndValueBytes, &referenceDataMap)
 
-	eventSignatureParts := strings.Split(event.EventSignature, "(")
-	eventName := eventSignatureParts[0]
-	verifiableEvent, err := workflows.BuildVerifiableEventForEVMEvent(cfg, event, &WorkflowDomain, eventName, &referenceDataMap)
+	abiJSON, err := workflows.GetContractABI(cfg, cfg.DetectEventTriggerConfig.ContractName)
+	if err != nil {
+		return "", err
+	}
+	eventName, err := workflows.GetEventNameFromLog(cfg, payload, abiJSON)
+	if err != nil {
+		return "", err
+	}
+
+	verifiableEvent, err := workflows.BuildVerifiableEventForEVMEvent(cfg, event, cfg.Service, eventName, &referenceDataMap)
 	if err != nil {
 		return "", err
 	}
@@ -117,7 +126,7 @@ func buildReferenceDataFromDTARequestManagementEvent(rt cre.Runtime, cfg *workfl
 		}
 	}
 
-	var distributorRequest *dtav1.DistributorRequest
+	var distributorRequest *dtaevents.DistributorRequest
 	if distributorRequestRef != nil {
 		distributorRequestBytes, err := json.Marshal(distributorRequestRef.Data["distributor_request"])
 		if err != nil {
@@ -144,13 +153,13 @@ func buildReferenceDataFromDTARequestManagementEvent(rt cre.Runtime, cfg *workfl
 	}, nil
 }
 
-func buildReferenceDataFromDTASettlementOpenedEvent(rt cre.Runtime, cfg *workflows.Config, event apiModels.EVMEvent) (*workflows.ReferenceData, error) {
+func buildReferenceDataFromDTASettlementEvent(rt cre.Runtime, cfg *workflows.Config, event apiModels.EVMEvent) (*workflows.ReferenceData, error) {
 	if event.Params == nil {
 		return nil, fmt.Errorf("event params are nil")
 	}
 	var referenceData *workflows.ReferenceData
 	var onChainReferenceData []workflows.OnChainReferenceData
-	getDistributorRequestInput, err := buildGetDistributorRequestInputFromDTASettlementOpenedEvent(cfg, *event.Params)
+	getDistributorRequestInput, err := buildGetDistributorRequestInputFromDTASettlementEvent(cfg, *event.Params)
 	if err != nil {
 		return nil, err
 	}
@@ -164,7 +173,7 @@ func buildReferenceDataFromDTASettlementOpenedEvent(rt cre.Runtime, cfg *workflo
 		}
 	}
 
-	fundTokenDataRequest, err := buildFundTokenDataRequestFromDTASettlementOpenedEvent(cfg, *event.Params)
+	fundTokenDataRequest, err := buildFundTokenDataRequestFromDTASettlementEvent(cfg, *event.Params)
 	if err != nil {
 		return nil, err
 	}
@@ -173,7 +182,7 @@ func buildReferenceDataFromDTASettlementOpenedEvent(rt cre.Runtime, cfg *workflo
 		return nil, err
 	}
 	onChainReferenceData = append(onChainReferenceData, fundTokenDataRef)
-	fundTokenData, ok := fundTokenDataRef.Data["fund_token_data"].(dtav1.FundTokenData)
+	fundTokenData, ok := fundTokenDataRef.Data["fund_token_data"].(dtaevents.FundTokenData)
 	if !ok {
 		return nil, fmt.Errorf("fund_token_data not found or not a FundTokenData")
 	}
@@ -202,7 +211,7 @@ func buildReferenceDataFromDTASettlementOpenedEvent(rt cre.Runtime, cfg *workflo
 	return referenceData, nil
 }
 
-func buildGetDistributorRequestInputFromDTASettlementOpenedEvent(cfg *workflows.Config, params map[string]any) (*GetDistributorRequestInput, error) {
+func buildGetDistributorRequestInputFromDTASettlementEvent(cfg *workflows.Config, params map[string]any) (*GetDistributorRequestInput, error) {
 	abiJSON, err := workflows.GetContractABI(cfg, DTARequestManagement)
 	if err != nil {
 		return nil, err
@@ -335,7 +344,7 @@ func fetchAndDecodeDistributorRequest(rt cre.Runtime, request GetDistributorRequ
 		return nil, fmt.Errorf("failed to marshal distributorRequest struct: %w", err)
 	}
 
-	var distributorRequest dtav1.DistributorRequest
+	var distributorRequest dtaevents.DistributorRequest
 	if err := json.Unmarshal(distributorRequestBytes, &distributorRequest); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal distributorRequest to struct: %w", err)
 	}
@@ -353,7 +362,7 @@ func fetchAndDecodeDistributorRequest(rt cre.Runtime, request GetDistributorRequ
 	}, nil
 }
 
-func buildFundTokenDataRequestFromDTASettlementOpenedEvent(cfg *workflows.Config, params map[string]any) (GetFundTokenInput, error) {
+func buildFundTokenDataRequestFromDTASettlementEvent(cfg *workflows.Config, params map[string]any) (GetFundTokenInput, error) {
 	abiJSON, err := workflows.GetContractABI(cfg, DTARequestManagement)
 	if err != nil {
 		return GetFundTokenInput{}, err
@@ -411,7 +420,7 @@ func buildFundTokenDataRequestFromDTASettlementOpenedEvent(cfg *workflows.Config
 	}, nil
 }
 
-func buildFundTokenDataRequestFromDTARequestManagementEvent(rt cre.Runtime, cfg *workflows.Config, event apiModels.EVMEvent, distributorRequest *dtav1.DistributorRequest) (*GetFundTokenInput, error) {
+func buildFundTokenDataRequestFromDTARequestManagementEvent(rt cre.Runtime, cfg *workflows.Config, event apiModels.EVMEvent, distributorRequest *dtaevents.DistributorRequest) (*GetFundTokenInput, error) {
 	abiJSON, err := workflows.GetContractABI(cfg, DTARequestManagement)
 	if err != nil {
 		return nil, err
@@ -527,14 +536,14 @@ func fetchAndDecodeFundToken(rt cre.Runtime, request GetFundTokenInput) (workflo
 	}
 
 	// fundTokenData is a struct, not a map - convert it to map[string]any
-	// First try to marshal the struct to JSON, then unmarshal to dtav1.FundTokenData
+	// First try to marshal the struct to JSON, then unmarshal to dtaevents.FundTokenData
 	fundTokenDataStruct := vals[1]
 	fundTokenDataBytes, err := json.Marshal(fundTokenDataStruct)
 	if err != nil {
 		return workflows.OnChainReferenceData{}, fmt.Errorf("failed to marshal fundTokenData struct: %w", err)
 	}
 
-	var fundTokenData dtav1.FundTokenData
+	var fundTokenData dtaevents.FundTokenData
 	if err := json.Unmarshal(fundTokenDataBytes, &fundTokenData); err != nil {
 		return workflows.OnChainReferenceData{}, fmt.Errorf("failed to unmarshal fundTokenData to struct: %w", err)
 	}
@@ -553,7 +562,7 @@ func fetchAndDecodeFundToken(rt cre.Runtime, request GetFundTokenInput) (workflo
 	}, nil
 }
 
-func buildPaymentRequest(cfg *workflows.Config, event apiModels.EVMEvent, fundTokenData dtav1.FundTokenData) (workflows.PaymentRequest, error) {
+func buildPaymentRequest(cfg *workflows.Config, event apiModels.EVMEvent, fundTokenData dtaevents.FundTokenData) (workflows.PaymentRequest, error) {
 	abiJSON, _ := workflows.GetContractABI(cfg, DTARequestSettlement)
 	parsedABI, err := gethAbi.JSON(strings.NewReader(abiJSON))
 	if err != nil {
@@ -581,10 +590,10 @@ func buildPaymentRequest(cfg *workflows.Config, event apiModels.EVMEvent, fundTo
 	var sender string
 	var receiver string
 	switch decodedEvent.RequestType {
-	case dtav1.DistributorRequestTypeSubscription:
+	case dtaevents.DistributorRequestTypeSubscription:
 		sender = decodedEvent.DistributorAddr.Hex()
 		receiver = decodedEvent.FundAdminAddr.Hex()
-	case dtav1.DistributorRequestTypeRedemption:
+	case dtaevents.DistributorRequestTypeRedemption:
 		sender = decodedEvent.FundAdminAddr.Hex()
 		receiver = decodedEvent.DistributorAddr.Hex()
 	default:
@@ -599,7 +608,7 @@ func buildPaymentRequest(cfg *workflows.Config, event apiModels.EVMEvent, fundTo
 	amount := workflows.Fixed2(quotient.Int64())
 
 	return workflows.PaymentRequest{
-		ApplicationType: WorkflowDomain,
+		ApplicationType: WorkflowService,
 		ApplicationAddr: event.Address,
 		E2EID:           decodedEvent.RequestId.Hex(),
 		Sender:          sender,
@@ -616,7 +625,7 @@ func buildPaymentRequest(cfg *workflows.Config, event apiModels.EVMEvent, fundTo
 	}, nil
 }
 
-func decodeDTASettlementOpened(params map[string]any) (dtav1.DTASettlementOpened, error) {
+func decodeDTASettlementOpened(params map[string]any) (dtaevents.DTASettlementOpened, error) {
 	// Convert map[string]any to map[string]string (same conversion used in decode.go)
 	stringParams := make(map[string]string, len(params))
 	for k, v := range params {
@@ -624,21 +633,21 @@ func decodeDTASettlementOpened(params map[string]any) (dtav1.DTASettlementOpened
 	}
 
 	// Use the generated decoder from decode_gen.go via eventDecoders
-	decoder, ok := dtav1.EventDecoders()[dtav1.EventDTASettlementOpened]
+	decoder, ok := dtaevents.EventDecoders()[dtaevents.EventDTASettlementOpened]
 	if !ok {
-		return dtav1.DTASettlementOpened{}, fmt.Errorf("decoder not found for DTASettlementOpened")
+		return dtaevents.DTASettlementOpened{}, fmt.Errorf("decoder not found for DTASettlementOpened")
 	}
 
 	// Call the decoder (txHash not needed for this event)
 	concrete, err := decoder(stringParams, "")
 	if err != nil {
-		return dtav1.DTASettlementOpened{}, fmt.Errorf("decode DTASettlementOpened: %w", err)
+		return dtaevents.DTASettlementOpened{}, fmt.Errorf("decode DTASettlementOpened: %w", err)
 	}
 
 	// Type assert to the concrete type
-	event, ok := concrete.(*dtav1.DTASettlementOpened)
+	event, ok := concrete.(*dtaevents.DTASettlementOpened)
 	if !ok {
-		return dtav1.DTASettlementOpened{}, fmt.Errorf("decoded event is not DTASettlementOpened")
+		return dtaevents.DTASettlementOpened{}, fmt.Errorf("decoded event is not DTASettlementOpened")
 	}
 
 	return *event, nil

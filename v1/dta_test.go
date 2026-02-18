@@ -7,14 +7,15 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/stretchr/testify/require"
 
-	v1 "github.com/smartcontractkit/crec-sdk-ext-dta/v1"
+	"github.com/smartcontractkit/crec-sdk-ext-dta/v1/events"
+	"github.com/smartcontractkit/crec-sdk-ext-dta/v1/operations"
 	transactTypes "github.com/smartcontractkit/crec-sdk/transact/types"
 )
 
 func TestDtaV1_New(t *testing.T) {
 	tests := []struct {
 		name       string
-		opts       *v1.Options
+		opts       *operations.Options
 		wantErr    bool
 		errContain string
 	}{
@@ -26,7 +27,7 @@ func TestDtaV1_New(t *testing.T) {
 		},
 		{
 			name: "valid options creates extension",
-			opts: &v1.Options{
+			opts: &operations.Options{
 				DTARequestManagementAddress: "0x1111111111111111111111111111111111111111",
 				DTARequestSettlementAddress: "0x2222222222222222222222222222222222222222",
 				AccountAddress:              "0x3333333333333333333333333333333333333333",
@@ -35,7 +36,7 @@ func TestDtaV1_New(t *testing.T) {
 		},
 		{
 			name: "invalid management address",
-			opts: &v1.Options{
+			opts: &operations.Options{
 				DTARequestManagementAddress: "invalid",
 				DTARequestSettlementAddress: "0x2222222222222222222222222222222222222222",
 				AccountAddress:              "0x3333333333333333333333333333333333333333",
@@ -45,7 +46,7 @@ func TestDtaV1_New(t *testing.T) {
 		},
 		{
 			name: "invalid settlement address",
-			opts: &v1.Options{
+			opts: &operations.Options{
 				DTARequestManagementAddress: "0x1111111111111111111111111111111111111111",
 				DTARequestSettlementAddress: "not-an-address",
 				AccountAddress:              "0x3333333333333333333333333333333333333333",
@@ -55,7 +56,7 @@ func TestDtaV1_New(t *testing.T) {
 		},
 		{
 			name: "invalid account address",
-			opts: &v1.Options{
+			opts: &operations.Options{
 				DTARequestManagementAddress: "0x1111111111111111111111111111111111111111",
 				DTARequestSettlementAddress: "0x2222222222222222222222222222222222222222",
 				AccountAddress:              "",
@@ -65,7 +66,7 @@ func TestDtaV1_New(t *testing.T) {
 		},
 		{
 			name: "empty management address",
-			opts: &v1.Options{
+			opts: &operations.Options{
 				DTARequestManagementAddress: "",
 				DTARequestSettlementAddress: "0x2222222222222222222222222222222222222222",
 				AccountAddress:              "0x3333333333333333333333333333333333333333",
@@ -77,7 +78,7 @@ func TestDtaV1_New(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			ext, err := v1.New(tt.opts)
+			ext, err := operations.New(tt.opts)
 			if tt.wantErr {
 				require.Error(t, err)
 				require.Nil(t, ext)
@@ -93,7 +94,7 @@ func TestDtaV1_New(t *testing.T) {
 }
 
 func TestDtaV1_PrepareRequestSubscriptionOperation(t *testing.T) {
-	ext, err := v1.New(&v1.Options{
+	ext, err := operations.New(&operations.Options{
 		DTARequestManagementAddress: "0x1111111111111111111111111111111111111111",
 		DTARequestSettlementAddress: "0x2222222222222222222222222222222222222222",
 		AccountAddress:              "0x3333333333333333333333333333333333333333",
@@ -113,7 +114,7 @@ func TestDtaV1_PrepareRequestSubscriptionOperation(t *testing.T) {
 }
 
 func TestDtaV1_PrepareRequestSubscriptionWithTokenApprovalOperation(t *testing.T) {
-	ext, err := v1.New(&v1.Options{
+	ext, err := operations.New(&operations.Options{
 		DTARequestManagementAddress: "0x1111111111111111111111111111111111111111",
 		DTARequestSettlementAddress: "0x2222222222222222222222222222222222222222",
 		AccountAddress:              "0x3333333333333333333333333333333333333333",
@@ -130,14 +131,12 @@ func TestDtaV1_PrepareRequestSubscriptionWithTokenApprovalOperation(t *testing.T
 	require.NoError(t, err)
 	require.NotNil(t, op)
 	require.Len(t, op.Transactions, 2)
-	// First tx is approval to payment token
 	require.Equal(t, paymentToken, op.Transactions[0].To)
-	// Second tx is subscription to request management
 	require.Equal(t, common.HexToAddress("0x1111111111111111111111111111111111111111"), op.Transactions[1].To)
 }
 
 func TestDtaV1_PrepareAllowDTAOperation(t *testing.T) {
-	ext, err := v1.New(&v1.Options{
+	ext, err := operations.New(&operations.Options{
 		DTARequestManagementAddress: "0x1111111111111111111111111111111111111111",
 		DTARequestSettlementAddress: "0x2222222222222222222222222222222222222222",
 		AccountAddress:              "0x3333333333333333333333333333333333333333",
@@ -150,16 +149,15 @@ func TestDtaV1_PrepareAllowDTAOperation(t *testing.T) {
 	copy(fundTokenId[:], []byte("testtoken"))
 	fundTokenAddr := common.HexToAddress("0xCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC")
 
-	op, err := ext.PrepareAllowDTAOperation(dtaAddr, 1234, fundAdminAddr, fundTokenId, fundTokenAddr, v1.TokenMintTypeIssueTokens, v1.TokenBurnTypeBurn)
+	op, err := ext.PrepareAllowDTAOperation(dtaAddr, 1234, fundAdminAddr, fundTokenId, fundTokenAddr, events.TokenMintTypeIssueTokens, events.TokenBurnTypeBurn)
 	require.NoError(t, err)
 	require.NotNil(t, op)
 	require.Len(t, op.Transactions, 1)
-	// Transaction goes to settlement address
 	require.Equal(t, common.HexToAddress("0x2222222222222222222222222222222222222222"), op.Transactions[0].To)
 }
 
 func TestDtaV1_PrepareCompleteRequestProcessingOperation(t *testing.T) {
-	ext, err := v1.New(&v1.Options{
+	ext, err := operations.New(&operations.Options{
 		DTARequestManagementAddress: "0x1111111111111111111111111111111111111111",
 		DTARequestSettlementAddress: "0x2222222222222222222222222222222222222222",
 		AccountAddress:              "0x3333333333333333333333333333333333333333",
@@ -173,12 +171,11 @@ func TestDtaV1_PrepareCompleteRequestProcessingOperation(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, op)
 	require.Len(t, op.Transactions, 1)
-	// Transaction goes to settlement address
 	require.Equal(t, common.HexToAddress("0x2222222222222222222222222222222222222222"), op.Transactions[0].To)
 }
 
 func TestDtaV1_PrepareRegisterFundAdminOperation(t *testing.T) {
-	ext, err := v1.New(&v1.Options{
+	ext, err := operations.New(&operations.Options{
 		DTARequestManagementAddress: "0x1111111111111111111111111111111111111111",
 		DTARequestSettlementAddress: "0x2222222222222222222222222222222222222222",
 		AccountAddress:              "0x3333333333333333333333333333333333333333",
@@ -193,7 +190,7 @@ func TestDtaV1_PrepareRegisterFundAdminOperation(t *testing.T) {
 }
 
 func TestDtaV1_PrepareRegisterDistributorOperation(t *testing.T) {
-	ext, err := v1.New(&v1.Options{
+	ext, err := operations.New(&operations.Options{
 		DTARequestManagementAddress: "0x1111111111111111111111111111111111111111",
 		DTARequestSettlementAddress: "0x2222222222222222222222222222222222222222",
 		AccountAddress:              "0x3333333333333333333333333333333333333333",
@@ -210,7 +207,7 @@ func TestDtaV1_PrepareRegisterDistributorOperation(t *testing.T) {
 }
 
 func TestDtaV1_PrepareRequestRedemptionOperation(t *testing.T) {
-	ext, err := v1.New(&v1.Options{
+	ext, err := operations.New(&operations.Options{
 		DTARequestManagementAddress: "0x1111111111111111111111111111111111111111",
 		DTARequestSettlementAddress: "0x2222222222222222222222222222222222222222",
 		AccountAddress:              "0x3333333333333333333333333333333333333333",
@@ -230,7 +227,7 @@ func TestDtaV1_PrepareRequestRedemptionOperation(t *testing.T) {
 }
 
 func TestDtaV1_PrepareDisallowDTAOperation(t *testing.T) {
-	ext, err := v1.New(&v1.Options{
+	ext, err := operations.New(&operations.Options{
 		DTARequestManagementAddress: "0x1111111111111111111111111111111111111111",
 		DTARequestSettlementAddress: "0x2222222222222222222222222222222222222222",
 		AccountAddress:              "0x3333333333333333333333333333333333333333",
@@ -250,7 +247,7 @@ func TestDtaV1_PrepareDisallowDTAOperation(t *testing.T) {
 }
 
 func TestDtaV1_PrepareSetManagementCCIPGasLimitOperation(t *testing.T) {
-	ext, err := v1.New(&v1.Options{
+	ext, err := operations.New(&operations.Options{
 		DTARequestManagementAddress: "0x1111111111111111111111111111111111111111",
 		DTARequestSettlementAddress: "0x2222222222222222222222222222222222222222",
 		AccountAddress:              "0x3333333333333333333333333333333333333333",
@@ -267,7 +264,7 @@ func TestDtaV1_PrepareSetManagementCCIPGasLimitOperation(t *testing.T) {
 }
 
 func TestDtaV1_PrepareSetSettlementCCIPGasLimitOperation(t *testing.T) {
-	ext, err := v1.New(&v1.Options{
+	ext, err := operations.New(&operations.Options{
 		DTARequestManagementAddress: "0x1111111111111111111111111111111111111111",
 		DTARequestSettlementAddress: "0x2222222222222222222222222222222222222222",
 		AccountAddress:              "0x3333333333333333333333333333333333333333",
@@ -284,7 +281,7 @@ func TestDtaV1_PrepareSetSettlementCCIPGasLimitOperation(t *testing.T) {
 }
 
 func TestDtaV1_PrepareGenericOperations(t *testing.T) {
-	ext, err := v1.New(&v1.Options{
+	ext, err := operations.New(&operations.Options{
 		DTARequestManagementAddress: "0x1111111111111111111111111111111111111111",
 		DTARequestSettlementAddress: "0x2222222222222222222222222222222222222222",
 		AccountAddress:              "0x3333333333333333333333333333333333333333",
@@ -315,14 +312,13 @@ func TestDtaV1_PrepareGenericOperations(t *testing.T) {
 }
 
 func TestDtaV1_OperationIDsAreUnique(t *testing.T) {
-	ext, err := v1.New(&v1.Options{
+	ext, err := operations.New(&operations.Options{
 		DTARequestManagementAddress: "0x1111111111111111111111111111111111111111",
 		DTARequestSettlementAddress: "0x2222222222222222222222222222222222222222",
 		AccountAddress:              "0x3333333333333333333333333333333333333333",
 	})
 	require.NoError(t, err)
 
-	// Create multiple operations and ensure IDs are unique
 	seenIDs := make(map[string]bool)
 	for i := 0; i < 100; i++ {
 		op, err := ext.PrepareRegisterFundAdminOperation()
@@ -334,7 +330,7 @@ func TestDtaV1_OperationIDsAreUnique(t *testing.T) {
 }
 
 func TestDtaV1_PrepareRegisterFundTokenOperation(t *testing.T) {
-	ext, err := v1.New(&v1.Options{
+	ext, err := operations.New(&operations.Options{
 		DTARequestManagementAddress: "0x1111111111111111111111111111111111111111",
 		DTARequestSettlementAddress: "0x2222222222222222222222222222222222222222",
 		AccountAddress:              "0x3333333333333333333333333333333333333333",
@@ -344,7 +340,7 @@ func TestDtaV1_PrepareRegisterFundTokenOperation(t *testing.T) {
 	var fundTokenId [32]byte
 	copy(fundTokenId[:], []byte("testtoken"))
 
-	tokenData := v1.FundTokenData{
+	tokenData := events.FundTokenData{
 		FundTokenAddr:                 common.HexToAddress("0xAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"),
 		NavFeedDecimals:               8,
 		PurchaseTokenRoundingDecimals: 2,
@@ -357,7 +353,7 @@ func TestDtaV1_PrepareRegisterFundTokenOperation(t *testing.T) {
 		DtaRequestSettlementAddr:      common.HexToAddress("0xCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC"),
 		TimezoneOffsetSecs:            big.NewInt(0),
 		NavTTL:                        big.NewInt(3600),
-		PaymentInfo: v1.DTAPayment{
+		PaymentInfo: events.DTAPayment{
 			OffChainPaymentCurrency: 0,
 			PaymentTokenSourceAddr:  common.HexToAddress("0xDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD"),
 			PaymentTokenDestAddr:    common.HexToAddress("0xEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEE"),
@@ -373,7 +369,7 @@ func TestDtaV1_PrepareRegisterFundTokenOperation(t *testing.T) {
 }
 
 func TestDtaV1_PrepareDistributorOperations(t *testing.T) {
-	ext, err := v1.New(&v1.Options{
+	ext, err := operations.New(&operations.Options{
 		DTARequestManagementAddress: "0x1111111111111111111111111111111111111111",
 		DTARequestSettlementAddress: "0x2222222222222222222222222222222222222222",
 		AccountAddress:              "0x3333333333333333333333333333333333333333",
@@ -434,7 +430,7 @@ func TestDtaV1_PrepareDistributorOperations(t *testing.T) {
 }
 
 func TestDtaV1_PrepareFundTokenOperations(t *testing.T) {
-	ext, err := v1.New(&v1.Options{
+	ext, err := operations.New(&operations.Options{
 		DTARequestManagementAddress: "0x1111111111111111111111111111111111111111",
 		DTARequestSettlementAddress: "0x2222222222222222222222222222222222222222",
 		AccountAddress:              "0x3333333333333333333333333333333333333333",
@@ -480,7 +476,7 @@ func TestDtaV1_PrepareFundTokenOperations(t *testing.T) {
 }
 
 func TestDtaV1_PrepareDistributorRequestOperations(t *testing.T) {
-	ext, err := v1.New(&v1.Options{
+	ext, err := operations.New(&operations.Options{
 		DTARequestManagementAddress: "0x1111111111111111111111111111111111111111",
 		DTARequestSettlementAddress: "0x2222222222222222222222222222222222222222",
 		AccountAddress:              "0x3333333333333333333333333333333333333333",
@@ -526,7 +522,7 @@ func TestDtaV1_PrepareDistributorRequestOperations(t *testing.T) {
 }
 
 func TestDtaV1_PrepareOwnershipOperations(t *testing.T) {
-	ext, err := v1.New(&v1.Options{
+	ext, err := operations.New(&operations.Options{
 		DTARequestManagementAddress: "0x1111111111111111111111111111111111111111",
 		DTARequestSettlementAddress: "0x2222222222222222222222222222222222222222",
 		AccountAddress:              "0x3333333333333333333333333333333333333333",
@@ -571,7 +567,7 @@ func TestDtaV1_PrepareOwnershipOperations(t *testing.T) {
 }
 
 func TestDtaV1_PrepareWithdrawTokensOperations(t *testing.T) {
-	ext, err := v1.New(&v1.Options{
+	ext, err := operations.New(&operations.Options{
 		DTARequestManagementAddress: "0x1111111111111111111111111111111111111111",
 		DTARequestSettlementAddress: "0x2222222222222222222222222222222222222222",
 		AccountAddress:              "0x3333333333333333333333333333333333333333",

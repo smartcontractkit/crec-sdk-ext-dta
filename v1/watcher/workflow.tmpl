@@ -4,29 +4,18 @@
 # Workflow-specific settings for CRE CLI targets.
 # Each target defines user-workflow and workflow-artifacts groups.
 # Settings here override CRE Project Settings File values.
-#
-# Example custom target:
-# my-target:
-#   user-workflow:
-#     workflow-name: "MyExampleWorkflow"    # Required: Workflow Registry name
-#   workflow-artifacts:
-#     workflow-path: "./main.ts"            # Path to workflow entry point
-#     config-path: "./config.yaml"          # Path to config file
-#     secrets-path: "../secrets.yaml"       # Path to secrets file (project root by default)
 
 local-simulation:
   user-workflow:
       workflow-name: "{{ if getenv "WF_NAME_OVERRIDE" }}{{ getenv "WF_NAME_OVERRIDE" }}{{ else }}{{ (datasource "config").workflowName }}{{ end }}"
   workflow-artifacts:
-    workflow-path: "."
+    workflow-path: "./wasm/workflow.wasm"
     config-path: "{{ if has (datasource "config") "configPath" }}{{ (datasource "config").configPath }}{{ else }}./config.yaml{{ end }}"
-    secrets-path: "{{ if has (datasource "config") "secretsPath" }}{{ (datasource "config").secretsPath }}{{ else }}./secrets.yaml{{ end }}"
 
 staging:
   user-workflow:
     workflow-name: "{{ if getenv "WF_NAME_OVERRIDE" }}{{ getenv "WF_NAME_OVERRIDE" }}{{ else }}{{ (datasource "config").workflowName }}{{ end }}"
   workflow-artifacts:
-    workflow-path: "."
+    workflow-path: "./wasm/workflow.wasm"
     config-path: "{{ if has (datasource "config") "configPath" }}{{ (datasource "config").configPath }}{{ else }}./config.yaml{{ end }}"
-    secrets-path: "{{ if has (datasource "config") "secretsPath" }}{{ (datasource "config").secretsPath }}{{ else }}./secrets.yaml{{ end }}"
 

@@ -9,13 +9,13 @@ local-simulation:
   user-workflow:
       workflow-name: "{{ if getenv "WF_NAME_OVERRIDE" }}{{ getenv "WF_NAME_OVERRIDE" }}{{ else }}{{ (datasource "config").workflowName }}{{ end }}"
   workflow-artifacts:
-    workflow-path: "./wasm/workflow.wasm"
+    workflow-path: "./bundle/binary.wasm"
     config-path: "{{ if has (datasource "config") "configPath" }}{{ (datasource "config").configPath }}{{ else }}./config.yaml{{ end }}"
 
 staging:
   user-workflow:
     workflow-name: "{{ if getenv "WF_NAME_OVERRIDE" }}{{ getenv "WF_NAME_OVERRIDE" }}{{ else }}{{ (datasource "config").workflowName }}{{ end }}"
   workflow-artifacts:
-    workflow-path: "./wasm/workflow.wasm"
+    workflow-path: "./bundle/binary.wasm"
     config-path: "{{ if has (datasource "config") "configPath" }}{{ (datasource "config").configPath }}{{ else }}./config.yaml{{ end }}"
 

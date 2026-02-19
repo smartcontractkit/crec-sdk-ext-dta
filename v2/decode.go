@@ -1,4 +1,4 @@
-package v1
+package v2
 
 import (
 	"context"
@@ -7,15 +7,15 @@ import (
 
 	workflows "github.com/smartcontractkit/cre-workflow-utils"
 	apiClient "github.com/smartcontractkit/crec-api-go/client"
-	"github.com/smartcontractkit/crec-sdk-ext-dta/v1/events"
+	"github.com/smartcontractkit/crec-sdk-ext-dta/v2/events"
 )
 
 // Solidity method signatures used to match on-chain reference data.
 // These are deterministic from the ABI and kept as constants to avoid
 // importing the heavy go-ethereum/accounts/abi package.
 const (
-	getFundTokenSig           = "getFundToken(address,bytes32)"
-	getDistributorRequestSig  = "getDistributorRequest(bytes32)"
+	getFundTokenSig          = "getFundToken(address,bytes32)"
+	getDistributorRequestSig = "getDistributorRequest(bytes32)"
 )
 
 // DecodedEvent wraps WatcherEventPayload with a decoded ConcreteEvent.
@@ -42,7 +42,7 @@ func (e DecodedEvent) EventName() events.EventName {
 
 // DecodeFromEvent extracts the WatcherEventPayload from an apiClient.Event and decodes
 // the ConcreteEvent based on the event type.
-func DecodeFromEvent(ctx context.Context, event apiClient.Event) (DecodedEvent, error) {
+func DecodeFromEvent(_ context.Context, event apiClient.Event) (DecodedEvent, error) {
 	payload, err := event.Payload.AsWatcherEventPayload()
 	if err != nil {
 		return DecodedEvent{}, fmt.Errorf("extract watcher payload: %w", err)
@@ -50,7 +50,7 @@ func DecodeFromEvent(ctx context.Context, event apiClient.Event) (DecodedEvent, 
 
 	verifiableEvent, err := workflows.DecodeVerifiableEvent(payload.VerifiableEvent)
 	if err != nil {
-		return DecodedEvent{}, fmt.Errorf("failed to decode verifiable event: %w", err)
+		return DecodedEvent{}, fmt.Errorf("decode verifiable event: %w", err)
 	}
 	if verifiableEvent == nil {
 		return DecodedEvent{}, fmt.Errorf("verifiable event is nil")
@@ -63,12 +63,12 @@ func DecodeFromEvent(ctx context.Context, event apiClient.Event) (DecodedEvent, 
 	decoders := events.EventDecoders()
 	decoder, ok := decoders[name]
 	if !ok {
-		return DecodedEvent{}, fmt.Errorf("unsupported event decoder for event name: %s", name)
+		return DecodedEvent{}, fmt.Errorf("no decoder for event: %s", name)
 	}
 
 	evmEvent, err := verifiableEvent.ChainEvent.AsEVMEvent()
 	if err != nil {
-		return DecodedEvent{}, fmt.Errorf("failed to convert chain event to evm event: %w", err)
+		return DecodedEvent{}, fmt.Errorf("convert to evm event: %w", err)
 	}
 
 	params := make(map[string]string, len(*evmEvent.Params))
@@ -161,7 +161,7 @@ func decodeDistributorRequest(referenceData workflows.ReferenceData) (*events.Di
 			return &distributorRequest, nil
 		}
 	}
-	return nil, nil // distributor request is optional
+	return nil, nil
 }
 
 func decodePaymentRequests(referenceData workflows.ReferenceData) ([]workflows.PaymentRequest, error) {

@@ -5,9 +5,10 @@ version: "3"
 # =============================================================================
 # Code generation, testing, and watcher workflow management tasks.
 
+silent: true
+
 tasks:
   default:
-    silent: true
     desc: "List all available tasks"
     cmds:
       - task --list
@@ -17,13 +18,11 @@ tasks:
   # -------------------------------------------------------------
 
   test:
-    silent: true
     desc: "Run all tests"
     cmds:
       - go test ./...
 
   tools:
-    silent: true
     desc: "Install required code generation tools"
     cmds:
       - echo "📦 Installing code generation tools..."
@@ -32,7 +31,6 @@ tasks:
       - echo "✅ Tools installed"
 
   deps:
-    silent: true
     desc: "Update dependencies"
     cmds:
       - echo "📦 Updating deps..."
@@ -41,7 +39,6 @@ tasks:
       - echo "✅ Dependencies updated"
 
   vendor:
-    silent: true
     desc: "Update vendor directory"
     cmds:
       - echo "📦 Updating vendor directory..."
@@ -55,7 +52,6 @@ tasks:
   # -------------------------------------------------------------
 
   generate:
-    silent: true
     desc: "Generate all code (bindings, operations, event types)"
     cmds:
       - task: generate:bindings
@@ -63,7 +59,6 @@ tasks:
       - echo "✅ All DTA SDK code generation complete"
 
   generate:bindings:
-    silent: true
     desc: "Generate Go bindings from ABIs"
     cmds:
       - echo "🔧 Generating Go bindings..."
@@ -78,7 +73,6 @@ tasks:
       - v1/bindings/dtars/dtars.gen.go
 
   generate:sdk:
-    silent: true
     desc: "Generate DTA SDK operations, event types, schemas, and decoders from ABIs"
     dir: v1
     cmds:
@@ -104,7 +98,7 @@ tasks:
 
   watcher:build:
     desc: "Build watcher WASM binary (BYOW pattern)"
-    silent: true
+
     vars:
       VERSION: '{{ .VERSION | default "v1" }}'
     cmds:
@@ -122,7 +116,7 @@ tasks:
 
   watcher:check:sizes:
     desc: "Check WASM binary and config sizes against CRE limits"
-    silent: true
+
     vars:
       VERSION: '{{ .VERSION | default "v1" }}'
       WASM_LIMIT_MB: 100
@@ -186,7 +180,7 @@ tasks:
 
   watcher:config:
     desc: "Render watcher config.yaml and workflow.yaml via gomplate"
-    silent: true
+
     vars:
       VERSION: '{{ .VERSION | default "v1" }}'
       VALUES_FILE: '{{ .VALUES_FILE | default "values/values.yaml" }}'
@@ -221,7 +215,7 @@ tasks:
     # Example Usage:
     # task watcher:simulate VERSION=v1 TX_HASH=0x4b6d4a1f62f1938c91f5aa18b6546261810c6b19201fda5239fab0ed4420e2ed EVENT_INDEX=0 TRIGGER_INDEX=0
     desc: "Simulate watcher workflow with CRE CLI"
-    silent: true
+
     deps: [mock:start]
     vars:
       VERSION: '{{ .VERSION | default "v1" }}'
@@ -246,7 +240,7 @@ tasks:
 
   watcher:deploy:
     desc: "Deploy watcher workflow to CRE"
-    silent: true
+
     deps: [watcher:check:cre-api-key]
     vars:
       VERSION: '{{ .VERSION | default "v1" }}'
@@ -259,7 +253,7 @@ tasks:
 
   watcher:release:
     desc: "Config and deploy watcher to CRE"
-    silent: true
+
     vars:
       VERSION: '{{ .VERSION | default "v1" }}'
       VALUES_FILE: '{{ .VALUES_FILE | default "values/values.yaml" }}'
@@ -276,7 +270,7 @@ tasks:
 
   watcher:clean:
     desc: "Clean watcher workflow artifacts"
-    silent: true
+
     vars:
       VERSION: '{{ .VERSION | default "v1" }}'
     cmds:
@@ -288,7 +282,7 @@ tasks:
   watcher:check:cre-api-key:
     desc: "Check if CRE_API_KEY environment variable is set"
     internal: true
-    silent: true
+
     cmds:
       - |
         if [ -z "${CRE_API_KEY:-}" ]; then
@@ -300,7 +294,7 @@ tasks:
   watcher:check:cre-eth-private-key:
     desc: "Check if CRE_ETH_PRIVATE_KEY environment variable is set"
     internal: true
-    silent: true
+
     cmds:
       - |
         if [ -z "${CRE_ETH_PRIVATE_KEY:-}" ]; then
@@ -310,7 +304,7 @@ tasks:
 
   watcher:account:link-key:
     desc: "Link wallet address to CRE account"
-    silent: true
+
     deps: [watcher:check:cre-api-key, watcher:check:cre-eth-private-key]
     vars:
       CRE_TARGET: '{{ .CRE_TARGET | default "staging" }}'
@@ -325,7 +319,7 @@ tasks:
 
   mock:start:
     desc: "Start mock server for workflow testing"
-    silent: true
+
     cmds:
       - |
         if docker ps --filter "name=mock-server" --filter "status=running" --no-trunc 2>/dev/null | grep -q 'mock-server'; then
@@ -337,19 +331,19 @@ tasks:
 
   mock:stop:
     desc: "Stop mock server"
-    silent: true
+
     cmds:
       - docker-compose -f mocks/docker-compose.mock.yml down
 
   mock:logs:
     desc: "View mock server logs"
-    silent: true
+
     cmds:
       - docker-compose -f mocks/docker-compose.mock.yml logs -f
 
   mock:restart:
     desc: "Restart mock server"
-    silent: true
+
     cmds:
       - task: mock:stop
       - task: mock:start

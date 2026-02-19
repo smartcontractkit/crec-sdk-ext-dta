@@ -335,6 +335,142 @@ func TestDecodeFromEvent_DecodedEventFields(t *testing.T) {
 	require.Equal(t, payload.EventHash, result.EventHash)
 }
 
+func TestDecodeFromEvent_NoReferenceData(t *testing.T) {
+	data := map[string]interface{}{
+		"distributor_addr": "0x00000000000000000000000000000000000000aa",
+	}
+
+	payload := buildWatcherEventPayloadWithoutReferenceData(events.EventDistributorRegistered.String(), data)
+	event := buildEvent(t, payload)
+
+	result, err := v1.DecodeFromEvent(context.Background(), event)
+	require.NoError(t, err)
+
+	require.Equal(t, events.EventDistributorRegistered, result.EventName())
+	require.NotNil(t, result.ConcreteEvent)
+	require.Nil(t, result.FundTokenData)
+	require.Nil(t, result.DistributorRequest)
+	require.Empty(t, result.PaymentRequests)
+}
+
+func TestDecodeFromEvent_MissingReferenceDataKeys(t *testing.T) {
+	data := map[string]interface{}{
+		"distributor_addr": "0x00000000000000000000000000000000000000aa",
+	}
+
+	referenceData := workflows.ReferenceData{
+		OnChain: []workflows.OnChainReferenceData{
+			{
+				Source: workflows.OnChainReferenceDataSource{
+					ContractAddress:           "0x1234567890123456789012345678901234567890",
+					ContractFunctionSignature: "getFundToken(address,bytes32)",
+					CallData:                  "0x1234",
+					Block:                     "latest",
+				},
+				Data: map[string]any{
+					"some_other_key": "irrelevant",
+				},
+			},
+			{
+				Source: workflows.OnChainReferenceDataSource{
+					ContractAddress:           "0x1234567890123456789012345678901234567890",
+					ContractFunctionSignature: "getDistributorRequest(bytes32)",
+					CallData:                  "0x5678",
+					Block:                     "latest",
+				},
+				Data: map[string]any{
+					"wrong_key": "irrelevant",
+				},
+			},
+		},
+	}
+
+	payload := buildWatcherEventPayloadWithReferenceData(events.EventDistributorRegistered.String(), data, referenceData)
+	event := buildEvent(t, payload)
+
+	result, err := v1.DecodeFromEvent(context.Background(), event)
+	require.NoError(t, err)
+
+	require.Equal(t, events.EventDistributorRegistered, result.EventName())
+	require.NotNil(t, result.ConcreteEvent)
+	require.Nil(t, result.FundTokenData)
+	require.Nil(t, result.DistributorRequest)
+}
+
+func buildWatcherEventPayloadWithoutReferenceData(eventName string, data map[string]any) apiClient.WatcherEventPayload {
+	return buildWatcherEventPayloadWithData(eventName, data, nil)
+}
+
+func buildWatcherEventPayloadWithReferenceData(eventName string, data map[string]any, rd workflows.ReferenceData) apiClient.WatcherEventPayload {
+	return buildWatcherEventPayloadWithData(eventName, data, &rd)
+}
+
+func buildWatcherEventPayloadWithData(eventName string, data map[string]any, refData *workflows.ReferenceData) apiClient.WatcherEventPayload {
+	var eventData map[string]any
+	if refData != nil {
+		refDataBytes, err := json.Marshal(refData)
+		if err != nil {
+			panic(err)
+		}
+		tv := workflows.TypeAndValue{
+			Type:  workflows.RawMessageTypeReferenceData,
+			Value: json.RawMessage(refDataBytes),
+		}
+		tvBytes, err := json.Marshal(tv)
+		if err != nil {
+			panic(err)
+		}
+		err = json.Unmarshal(tvBytes, &eventData)
+		if err != nil {
+			panic(err)
+		}
+	}
+
+	contractAddress := "0x1234567890123456789012345678901234567890"
+	txHash := common.HexToHash("0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890").Hex()
+	evmEvent := apiModels.EVMEvent{
+		Address:        contractAddress,
+		BlockNumber:    12345,
+		BlockTimestamp: uint64(time.Now().Unix()),
+		ChainId:        "1",
+		EventSignature: eventName + "()",
+		LogIndex:       0,
+		Params:         &data,
+		TopicHash:      common.HexToHash("0x1234567890123456789012345678901234567890123456789012345678901234").Hex(),
+		TxHash:         txHash,
+	}
+
+	chainEvent := &apiModels.VerifiableEvent_ChainEvent{}
+	if err := chainEvent.FromEVMEvent(evmEvent); err != nil {
+		panic(err)
+	}
+
+	chainFamily := "evm"
+	chainSelector := "1"
+	service := "test-service"
+	timestamp := time.Now()
+	event := apiModels.VerifiableEvent{
+		ChainEvent:    chainEvent,
+		ChainFamily:   &chainFamily,
+		ChainSelector: &chainSelector,
+		Data:          &eventData,
+		Name:          eventName,
+		Service:       &service,
+		Timestamp:     timestamp,
+	}
+	eventBytes, err := json.Marshal(event)
+	if err != nil {
+		panic(err)
+	}
+	eventHash := common.BytesToHash(eventBytes[:32]).Hex()
+
+	return apiClient.WatcherEventPayload{
+		EventHash:       eventHash,
+		VerifiableEvent: base64.StdEncoding.EncodeToString(eventBytes),
+		WatcherId:       "test-watcher",
+	}
+}
+
 func TestEventPayloadRoundTrip(t *testing.T) {
 	data := map[string]interface{}{
 		"distributor_addr": "0x00000000000000000000000000000000000000aa",

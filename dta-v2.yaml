@@ -1,0 +1,109 @@
+# =============================================================================
+# crec-gen.yaml: DTA v2 (Full SDK, Versioned)
+# =============================================================================
+# Same structure as DTA v1 but targeting v2 paths.
+# Shows the versioning pattern for adding a new version alongside an existing one.
+#
+# Usage:
+#   crec-gen full-sdk --config crec-gen.yaml
+
+watcher:
+  service: "dta.v2"
+  module: "github.com/smartcontractkit/crec-sdk-ext-dta/v2/watcher"
+  output: "./v2/watcher"
+
+module: "github.com/smartcontractkit/crec-sdk-ext-dta/v2"
+
+output:
+  events: "./v2/events"
+  operations: "./v2/operations"
+  schemas: "./v2/watcher/bundle"
+  values: "./v2/watcher/values"
+  decode: "./v2"
+
+contracts:
+  - name: DTARequestManagement
+    abi: ./abi/v2/DTARequestManagementU.abi.json
+    skip_methods:
+      - ccipReceive
+      - completeDistributorRequest
+      - directCompleteDistributorRequest
+      - initialize
+      - recoverFunds
+      - renounceOwnership
+      - transferOwnership
+    func_overrides:
+      setCCIPGasLimit: SetManagementCCIPGasLimitOperation
+      withdrawTokens: WithdrawManagementTokensOperation
+
+  - name: DTARequestSettlement
+    abi: ./abi/v2/DTARequestSettlementU.abi.json
+    skip_methods:
+      - ccipReceive
+      - ccipHandleDTAMessage
+      - directHandleDTAMessage
+      - recoverFunds
+      - _executeSettlement
+      - initialize
+    func_overrides:
+      setCCIPGasLimit: SetSettlementCCIPGasLimitOperation
+      withdrawTokens: WithdrawSettlementTokensOperation
+      transferOwnership: TransferDTARequestSettlementOwnershipOperation
+      renounceOwnership: RenounceDTARequestSettlementOwnershipOperation
+
+type_overrides:
+  allowDTA_mintType: TokenMintType
+  allowDTA_burnType: TokenBurnType
+
+enum_mappings:
+  "enum IDTAMessage.DistributorRequestType": DistributorRequestType
+  "enum IDTAMessage.RequestStatus": RequestStatus
+  "enum IDTARequestSettlement.TokenMintType": TokenMintType
+  "enum IDTARequestSettlement.TokenBurnType": TokenBurnType
+
+skip_events: []
+
+extra_events:
+  - name: AnswerUpdated
+    fields:
+      - name: current
+        go_type: "*big.Int"
+      - name: roundId
+        go_type: "*big.Int"
+      - name: updatedAt
+        go_type: "*big.Int"
+
+bundle_events:
+  - name: DistributorRegistered
+    trigger_contract: DTARequestManagement
+    description: "New distributor registered"
+  - name: DistributorRequestCanceled
+    trigger_contract: DTARequestManagement
+    description: "Distributor request canceled"
+  - name: DistributorRequestProcessed
+    trigger_contract: DTARequestManagement
+    description: "Distributor request completed"
+  - name: DistributorRequestProcessing
+    trigger_contract: DTARequestManagement
+    description: "Distributor request being processed"
+  - name: FundAdminRegistered
+    trigger_contract: DTARequestManagement
+    description: "New fund admin registered"
+  - name: FundTokenAllowlistUpdated
+    trigger_contract: DTARequestManagement
+    description: "Fund token allowlist updated"
+  - name: FundTokenRegistered
+    trigger_contract: DTARequestManagement
+    description: "New fund token created"
+  - name: RedemptionRequested
+    trigger_contract: DTARequestManagement
+    description: "Redemption request"
+  - name: SubscriptionRequested
+    trigger_contract: DTARequestManagement
+    description: "Subscription request"
+  - name: DTASettlementOpened
+    trigger_contract: DTARequestSettlement
+    description: "DTA settlement initiated"
+  - name: DTASettlementClosed
+    trigger_contract: DTARequestSettlement
+    description: "DTA settlement completed or failed"

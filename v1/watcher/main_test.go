@@ -17,21 +17,22 @@ import (
 	evmmock "github.com/smartcontractkit/cre-sdk-go/capabilities/blockchain/evm/mock"
 	httpcap "github.com/smartcontractkit/cre-sdk-go/capabilities/networking/http"
 	httpmock "github.com/smartcontractkit/cre-sdk-go/capabilities/networking/http/mock"
+	"github.com/smartcontractkit/cre-sdk-go/cre/testutils"
+
 	workflows "github.com/smartcontractkit/cre-workflow-utils"
 	wf "github.com/smartcontractkit/crec-sdk-ext-dta/v1/watcher/handler"
 )
 
 func TestWatcherV1_DTA_SimpleFlow_Post(t *testing.T) {
-	rt := workflows.PrepareTestingRuntime(t)
-	service := "dta"
+	rt := testutils.NewRuntime(t, testutils.Secrets{})
+	service := "dta.v1"
 
 	cfg := &workflows.Config{
 		Network:       "evm",
 		ChainID:       "31337",
 		ChainSelector: "3379446385462418246",
 		Service:       &service,
-		CourierURL:    "http://example.com",
-		ApiKeySecret:  "courier",
+		CourierURL: "http://example.com",
 		DetectEventTriggerConfig: workflows.DetectEventTriggerConfig{
 			ContractName:       "TransparentUpgradeableProxy",
 			ContractAddress:    "0x84eA74d481Ee0A5332c457a4d796187F6Ba67fEB",

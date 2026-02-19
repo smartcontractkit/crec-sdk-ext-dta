@@ -5,9 +5,10 @@ version: "3"
 # =============================================================================
 # Code generation, testing, and watcher workflow management tasks.
 
+silent: true
+
 tasks:
   default:
-    silent: true
     desc: "List all available tasks"
     cmds:
       - task --list
@@ -17,13 +18,11 @@ tasks:
   # -------------------------------------------------------------
 
   test:
-    silent: true
     desc: "Run all tests"
     cmds:
       - go test ./...
 
   tools:
-    silent: true
     desc: "Install required code generation tools"
     cmds:
       - echo "📦 Installing code generation tools..."
@@ -32,7 +31,6 @@ tasks:
       - echo "✅ Tools installed"
 
   deps:
-    silent: true
     desc: "Update dependencies"
     cmds:
       - echo "📦 Updating deps..."
@@ -41,7 +39,6 @@ tasks:
       - echo "✅ Dependencies updated"
 
   vendor:
-    silent: true
     desc: "Update vendor directory"
     cmds:
       - echo "📦 Updating vendor directory..."
@@ -55,40 +52,37 @@ tasks:
   # -------------------------------------------------------------
 
   generate:
-    silent: true
     desc: "Generate all code (bindings, operations, event types)"
     cmds:
       - task: generate:bindings
-      - task: generate:operations
+      - task: generate:sdk
       - echo "✅ All DTA SDK code generation complete"
 
   generate:bindings:
-    silent: true
-    desc: "Generate Go bindings from ABIs in v1/abi/"
+    desc: "Generate Go bindings from ABIs"
     cmds:
-      - echo "🔧 Generating Go bindings from v1/abi/..."
+      - echo "🔧 Generating Go bindings..."
       - mkdir -p v1/bindings/dtarm v1/bindings/dtars
-      - abigen --abi v1/abi/DTARequestManagementU.abi.json --pkg dtarm --out v1/bindings/dtarm/dtarm.gen.go
-      - abigen --abi v1/abi/DTARequestSettlementU.abi.json --pkg dtars --out v1/bindings/dtars/dtars.gen.go
+      - abigen --abi v1/watcher/bundle/DTARequestManagementU.abi.json --pkg dtarm --out v1/bindings/dtarm/dtarm.gen.go
+      - abigen --abi v1/watcher/bundle/DTARequestSettlementU.abi.json --pkg dtars --out v1/bindings/dtars/dtars.gen.go
       - echo "✅ Bindings generated"
     sources:
-      - v1/abi/*.json
+      - v1/watcher/bundle/*.abi.json
     generates:
       - v1/bindings/dtarm/dtarm.gen.go
       - v1/bindings/dtars/dtars.gen.go
 
-  generate:operations:
-    silent: true
-    desc: "Generate DTA SDK operations, event types, and decoders from ABIs"
+  generate:sdk:
+    desc: "Generate DTA SDK operations, event types, schemas, and decoders from ABIs"
     dir: v1
     cmds:
-      - echo "🔧 Generating SDK operations, events, and decoders..."
+      - echo "🔧 Generating SDK operations, events, schemas, and decoders..."
       - go run ./gen/main.go ./gen/config.go
       - echo "✅ Operations, events, and decoders generated"
     sources:
       - gen/main.go
       - gen/config.go
-      - abi/*.json
+      - watcher/bundle/*.abi.json
     generates:
       - abi_gen.go
       - extension_gen.go
@@ -96,6 +90,87 @@ tasks:
       - operations_helpers_gen.go
       - events_gen.go
       - decode_gen.go
+      - watcher/bundle/params_schema_gen.go
+
+  # -------------------------------------------------------------
+  # ---------------- Watcher Bundle Tasks ----------------------
+  # -------------------------------------------------------------
+
+  watcher:build:
+    desc: "Build watcher WASM binary (BYOW pattern)"
+
+    vars:
+      VERSION: '{{ .VERSION | default "v1" }}'
+    cmds:
+      - echo "🔧 Building watcher WASM binary..."
+      - cd {{ .VERSION }}/watcher && make build
+      - echo "✅ Watcher bundle built"
+    sources:
+      - "{{ .VERSION }}/watcher/**/*.go"
+      - "{{ .VERSION }}/watcher/handler/**/*.go"
+      - "{{ .VERSION }}/watcher/bundle/*.abi.json"
+      - "{{ .VERSION }}/watcher/bundle/config.tmpl"
+    generates:
+      - "{{ .VERSION }}/watcher/wasm/workflow.wasm"
+      - "{{ .VERSION }}/watcher/bundle/binary.wasm"
+
+  watcher:check:sizes:
+    desc: "Check WASM binary and config sizes against CRE limits"
+
+    vars:
+      VERSION: '{{ .VERSION | default "v1" }}'
+      WASM_LIMIT_MB: 100
+      WASM_COMPRESSED_LIMIT_MB: 20
+      CONFIG_LIMIT_KB: 50
+    cmds:
+      - |
+        WASM="{{ .VERSION }}/watcher/bundle/binary.wasm"
+        if [ ! -f "$WASM" ]; then
+          echo "❌ WASM not found at $WASM — run 'task watcher:build' first"
+          exit 1
+        fi
+
+        WASM_BYTES=$(wc -c < "$WASM" | tr -d ' ')
+        WASM_MB=$(echo "scale=2; $WASM_BYTES / 1048576" | bc)
+        echo "WASM binary:       ${WASM_MB} MB  (limit: {{ .WASM_LIMIT_MB }} MB)"
+        if [ "$(echo "$WASM_MB > {{ .WASM_LIMIT_MB }}" | bc)" -eq 1 ]; then
+          echo "❌ WASM uncompressed exceeds limit"
+          exit 1
+        fi
+
+        COMPRESSED=$(mktemp)
+        brotli -c "$WASM" > "$COMPRESSED" 2>/dev/null
+        if [ $? -eq 0 ]; then
+          COMP_BYTES=$(wc -c < "$COMPRESSED" | tr -d ' ')
+          COMP_MB=$(echo "scale=2; $COMP_BYTES / 1048576" | bc)
+          echo "WASM compressed:   ${COMP_MB} MB  (limit: {{ .WASM_COMPRESSED_LIMIT_MB }} MB)"
+          if [ "$(echo "$COMP_MB > {{ .WASM_COMPRESSED_LIMIT_MB }}" | bc)" -eq 1 ]; then
+            rm -f "$COMPRESSED"
+            echo "❌ WASM compressed exceeds limit"
+            exit 1
+          fi
+        else
+          echo "⚠️  brotli not found — skipping compressed size check"
+        fi
+        rm -f "$COMPRESSED"
+
+        CONFIG_BYTES=0
+        for abi in {{ .VERSION }}/watcher/bundle/*.abi.json; do
+          if [ -f "$abi" ]; then
+            SIZE=$(wc -c < "$abi" | tr -d ' ')
+            CONFIG_BYTES=$((CONFIG_BYTES + SIZE))
+            echo "  ABI $(basename $abi): ${SIZE} bytes"
+          fi
+        done
+        CONFIG_BYTES=$((CONFIG_BYTES + 500))
+        CONFIG_KB=$(echo "scale=2; $CONFIG_BYTES / 1024" | bc)
+        echo "Config estimate:   ${CONFIG_KB} KB  (limit: {{ .CONFIG_LIMIT_KB }} KB)"
+        if [ "$(echo "$CONFIG_KB > {{ .CONFIG_LIMIT_KB }}" | bc)" -eq 1 ]; then
+          echo "❌ Config estimate exceeds limit"
+          exit 1
+        fi
+
+        echo "✅ All sizes within CRE limits"
 
   # -------------------------------------------------------------
   # ---------------- Watcher Workflow Tasks ---------------------
@@ -105,12 +180,11 @@ tasks:
 
   watcher:config:
     desc: "Render watcher config.yaml and workflow.yaml via gomplate"
-    silent: true
+
     vars:
       VERSION: '{{ .VERSION | default "v1" }}'
       VALUES_FILE: '{{ .VALUES_FILE | default "values/values.yaml" }}'
       WF_NAME_OVERRIDE: '{{ .WF_NAME_OVERRIDE | default "" }}'
-      TRIGGER_CONFIG_FILE: '{{ .TRIGGER_CONFIG_FILE | default "values/trigger_config.yaml" }}'
     cmds:
       - |
         VALUES_PATH="{{ .VERSION }}/watcher/{{ .VALUES_FILE }}"
@@ -119,19 +193,12 @@ tasks:
           exit 1
         fi
 
-        TRIGGER_CONFIG_PATH="{{ .VERSION }}/watcher/{{ .TRIGGER_CONFIG_FILE }}"
-        if [ ! -f "$TRIGGER_CONFIG_PATH" ]; then
-          echo "❌ trigger config file not found: $TRIGGER_CONFIG_PATH"
-          exit 1
-        fi
-
         export WF_NAME_OVERRIDE="{{ .WF_NAME_OVERRIDE }}"
 
-        if [ -f "{{ .VERSION }}/watcher/config.tmpl" ]; then
+        if [ -f "{{ .VERSION }}/watcher/bundle/config.tmpl" ]; then
           gomplate \
             -d "config=$VALUES_PATH" \
-            -d "trigger_config=$TRIGGER_CONFIG_PATH" \
-            -f {{ .VERSION }}/watcher/config.tmpl \
+            -f {{ .VERSION }}/watcher/bundle/config.tmpl \
             -o {{ .VERSION }}/watcher/config.yaml
           echo "✅ config.yaml generated"
         fi
@@ -139,7 +206,6 @@ tasks:
         if [ -f "{{ .VERSION }}/watcher/workflow.tmpl" ]; then
           gomplate \
             -d "config=$VALUES_PATH" \
-            -d "trigger_config=$TRIGGER_CONFIG_PATH" \
             -f {{ .VERSION }}/watcher/workflow.tmpl \
             -o {{ .VERSION }}/watcher/workflow.yaml
           echo "✅ workflow.yaml generated"
@@ -149,7 +215,7 @@ tasks:
     # Example Usage:
     # task watcher:simulate VERSION=v1 TX_HASH=0x4b6d4a1f62f1938c91f5aa18b6546261810c6b19201fda5239fab0ed4420e2ed EVENT_INDEX=0 TRIGGER_INDEX=0
     desc: "Simulate watcher workflow with CRE CLI"
-    silent: true
+
     deps: [mock:start]
     vars:
       VERSION: '{{ .VERSION | default "v1" }}'
@@ -171,18 +237,10 @@ tasks:
           --non-interactive \
           --trigger-index {{ .TRIGGER_INDEX }}
 
-  watcher:secrets:
-    desc: "Upload watcher secrets to CRE"
-    silent: true
-    vars:
-      VERSION: '{{ .VERSION | default "v1" }}'
-      CRE_TARGET: '{{ .CRE_TARGET | default "staging" }}'
-    cmds:
-      - cre secrets create "$(realpath ./{{ .VERSION }}/watcher/secrets.yaml)" --target {{ .CRE_TARGET }} -R "$(realpath ./{{ .VERSION }}/watcher)"
 
   watcher:deploy:
     desc: "Deploy watcher workflow to CRE"
-    silent: true
+
     deps: [watcher:check:cre-api-key]
     vars:
       VERSION: '{{ .VERSION | default "v1" }}'
@@ -195,7 +253,7 @@ tasks:
 
   watcher:release:
     desc: "Config and deploy watcher to CRE"
-    silent: true
+
     vars:
       VERSION: '{{ .VERSION | default "v1" }}'
       VALUES_FILE: '{{ .VALUES_FILE | default "values/values.yaml" }}'
@@ -212,18 +270,19 @@ tasks:
 
   watcher:clean:
     desc: "Clean watcher workflow artifacts"
-    silent: true
+
     vars:
       VERSION: '{{ .VERSION | default "v1" }}'
     cmds:
       - |
         cd {{ .VERSION }}/watcher && \
-        rm -f binary.wasm.br.b64 binary.wasm.br config.yaml workflow.yaml .bin_url .cfg_url cre.yaml upload.log test.state.yaml
+        rm -f binary.wasm.br.b64 binary.wasm.br config.yaml workflow.yaml .bin_url .cfg_url cre.yaml upload.log test.state.yaml && \
+        rm -rf wasm/
 
   watcher:check:cre-api-key:
     desc: "Check if CRE_API_KEY environment variable is set"
     internal: true
-    silent: true
+
     cmds:
       - |
         if [ -z "${CRE_API_KEY:-}" ]; then
@@ -235,7 +294,7 @@ tasks:
   watcher:check:cre-eth-private-key:
     desc: "Check if CRE_ETH_PRIVATE_KEY environment variable is set"
     internal: true
-    silent: true
+
     cmds:
       - |
         if [ -z "${CRE_ETH_PRIVATE_KEY:-}" ]; then
@@ -245,7 +304,7 @@ tasks:
 
   watcher:account:link-key:
     desc: "Link wallet address to CRE account"
-    silent: true
+
     deps: [watcher:check:cre-api-key, watcher:check:cre-eth-private-key]
     vars:
       CRE_TARGET: '{{ .CRE_TARGET | default "staging" }}'
@@ -260,7 +319,7 @@ tasks:
 
   mock:start:
     desc: "Start mock server for workflow testing"
-    silent: true
+
     cmds:
       - |
         if docker ps --filter "name=mock-server" --filter "status=running" --no-trunc 2>/dev/null | grep -q 'mock-server'; then
@@ -272,19 +331,19 @@ tasks:
 
   mock:stop:
     desc: "Stop mock server"
-    silent: true
+
     cmds:
       - docker-compose -f mocks/docker-compose.mock.yml down
 
   mock:logs:
     desc: "View mock server logs"
-    silent: true
+
     cmds:
       - docker-compose -f mocks/docker-compose.mock.yml logs -f
 
   mock:restart:
     desc: "Restart mock server"
-    silent: true
+
     cmds:
       - task: mock:stop
       - task: mock:start

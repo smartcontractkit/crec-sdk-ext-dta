@@ -1,40 +1,30 @@
-// Package v1 provides CREC SDK extension for DTA (Digital Transfer Agent) v1.0 operations.
+// Package v1 provides CREC SDK extension for DTA (Digital Transfer Agent) v1.0.
 //
-// This package works with DTARequestManagement and DTARequestSettlement contracts
-// to facilitate tokenized fund subscription and redemption workflows.
+// This package is organized into sub-packages:
 //
-// # Usage
+//   - v1/events:     Lightweight event types, decoders, and constants.
+//   - v1/contracts:  Embedded ABI JSON and parsed ABI accessors.
+//   - v1/operations: Extension client for preparing on-chain operations.
 //
-//	ext, err := v1.New(&v1.Options{
+// The root v1 package provides [DecodeFromEvent] for SDK consumers to decode
+// watcher event payloads into typed Go structs.
+//
+// # Decoding Events
+//
+//	decoded, err := v1.DecodeFromEvent(ctx, event)
+//	if err != nil {
+//		log.Fatal(err)
+//	}
+//	fmt.Println(decoded.EventName())
+//
+// # Preparing Operations
+//
+//	import "github.com/smartcontractkit/crec-sdk-ext-dta/v1/operations"
+//
+//	ext, err := operations.New(&operations.Options{
 //		DTARequestManagementAddress: "0x...",
 //		DTARequestSettlementAddress: "0x...",
 //		AccountAddress:              "0x...",
 //	})
-//	if err != nil {
-//		log.Fatal(err)
-//	}
-//
-//	// Prepare a subscription operation
 //	op, err := ext.PrepareRequestSubscriptionOperation(fundAdmin, fundTokenId, amount)
-//
-// # Operations
-//
-// The extension provides type-safe Prepare* functions for all contract operations.
-// For methods not covered by the generated functions, use the generic helpers:
-//
-//	op, err := ext.PrepareDTARequestManagementOperation("methodName", arg1, arg2)
-//	op, err := ext.PrepareDTARequestSettlementOperation("methodName", arg1, arg2)
-//
-// # Events
-//
-// Event types are generated from the contract ABIs for use in decoding:
-//
-//	event, err := v1.DecodeEvent(eventParams)
-//	switch e := event.Data.(type) {
-//	case *v1.DistributorRequestCreated:
-//		// Handle subscription/redemption request
-//	case *v1.DistributorRequestCompleted:
-//		// Handle completion
-//	}
 package v1
-

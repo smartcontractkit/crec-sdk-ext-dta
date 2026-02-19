@@ -17,7 +17,7 @@ import (
 	"github.com/smartcontractkit/cre-sdk-go/cre"
 	workflows "github.com/smartcontractkit/cre-workflow-utils"
 	apiModels "github.com/smartcontractkit/crec-api-go/models"
-	dtaevents "github.com/smartcontractkit/crec-sdk-ext-dta/v1/events"
+	dtaevents "github.com/smartcontractkit/crec-sdk-ext-dta/v2/events"
 )
 
 var (
@@ -26,7 +26,7 @@ var (
 	DTARequestSettlement              string = "DTARequestSettlement"
 	DTASettlementOpenedEventSignature string = "DTASettlementOpened(address,bytes32,uint8,address,uint64,address,bytes32,address,uint256,uint256,uint8)"
 	DTASettlementClosedEventSignature string = "DTASettlementClosed(address,bytes32,uint8,address,uint64,address,bytes32,bool,bytes)"
-	WorkflowService                    string = "dta.v1"
+	WorkflowService                          = "dta.v2"
 )
 
 type GetDistributorRequestInput struct {
@@ -44,8 +44,6 @@ type GetFundTokenInput struct {
 	FundTokenId        []byte
 }
 
-// OnLog processes EVM log events from DTA contracts.
-// It decodes event parameters, composes workflow metadata, and posts signed events.
 func OnLog(cfg *workflows.Config, rt cre.Runtime, payload *evm.Log) (string, error) {
 
 	event, err := workflows.BuildEVMEventFromLog(rt, cfg, payload)
@@ -492,13 +490,11 @@ func fetchAndDecodeFundToken(rt cre.Runtime, request GetFundTokenInput) (workflo
 	callData := make([]byte, 4+32+32)
 	copy(callData[:4], methodID)
 
-	// Properly left-pad the address to 32 bytes
-	fundAdminAddrBytes := gethCommon.HexToAddress(request.FundAdminAddr).Bytes() // 20 bytes
+	fundAdminAddrBytes := gethCommon.HexToAddress(request.FundAdminAddr).Bytes()
 	fundAdminAddrPadded := make([]byte, 32)
 	copy(fundAdminAddrPadded[32-len(fundAdminAddrBytes):], fundAdminAddrBytes)
 	copy(callData[4:4+32], fundAdminAddrPadded)
 
-	// Ensure fundTokenId is 32 bytes (already assumed, but for safety)
 	fundTokenIdPadded := make([]byte, 32)
 	copy(fundTokenIdPadded, request.FundTokenId)
 	copy(callData[4+32:4+32+32], fundTokenIdPadded)
@@ -535,8 +531,6 @@ func fetchAndDecodeFundToken(rt cre.Runtime, request GetFundTokenInput) (workflo
 		return workflows.OnChainReferenceData{}, fmt.Errorf("enabled is not a bool")
 	}
 
-	// fundTokenData is a struct, not a map - convert it to map[string]any
-	// First try to marshal the struct to JSON, then unmarshal to dtaevents.FundTokenData
 	fundTokenDataStruct := vals[1]
 	fundTokenDataBytes, err := json.Marshal(fundTokenDataStruct)
 	if err != nil {
@@ -626,25 +620,21 @@ func buildPaymentRequest(cfg *workflows.Config, event apiModels.EVMEvent, fundTo
 }
 
 func decodeDTASettlementOpened(params map[string]any) (dtaevents.DTASettlementOpened, error) {
-	// Convert map[string]any to map[string]string (same conversion used in decode.go)
 	stringParams := make(map[string]string, len(params))
 	for k, v := range params {
 		stringParams[k] = fmt.Sprintf("%v", v)
 	}
 
-	// Use the generated decoder from decode_gen.go via eventDecoders
 	decoder, ok := dtaevents.EventDecoders()[dtaevents.EventDTASettlementOpened]
 	if !ok {
 		return dtaevents.DTASettlementOpened{}, fmt.Errorf("decoder not found for DTASettlementOpened")
 	}
 
-	// Call the decoder (txHash not needed for this event)
 	concrete, err := decoder(stringParams, "")
 	if err != nil {
 		return dtaevents.DTASettlementOpened{}, fmt.Errorf("decode DTASettlementOpened: %w", err)
 	}
 
-	// Type assert to the concrete type
 	event, ok := concrete.(*dtaevents.DTASettlementOpened)
 	if !ok {
 		return dtaevents.DTASettlementOpened{}, fmt.Errorf("decoded event is not DTASettlementOpened")

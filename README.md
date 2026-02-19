@@ -10,55 +10,96 @@ go get github.com/smartcontractkit/crec-sdk-ext-dta
 
 ## Versioning
 
-This SDK uses **contract versioning** (e.g., `v1/`) to match deployed smart contract ABI versions. This is separate from the Go module's semantic versioning.
+This SDK uses **contract versioning** (e.g., `v1/`, `v2/`) to match deployed smart contract ABI versions. This is separate from the Go module's semantic versioning.
 
-| Directory | Contract Version | Description                  |
-| --------- | ---------------- | ---------------------------- |
-| `v1/`     | DTA contracts v1 | Current production contracts |
-
-When new contract versions are deployed with breaking ABI changes, a new directory (e.g., `v2/`) will be added:
+| Directory | Contract Version | Description                                        |
+| --------- | ---------------- | -------------------------------------------------- |
+| `v1/`     | DTA contracts v1 | Production contracts                               |
+| `v2/`     | DTA contracts v2 | Adds `referenceID`, distributor authorization model |
 
 ```go
 import dtav1 "github.com/smartcontractkit/crec-sdk-ext-dta/v1"
+import dtav2 "github.com/smartcontractkit/crec-sdk-ext-dta/v2"
 ```
+
+Both versions share the same package layout (`events/`, `operations/`, `watcher/`, `decode.go`) and the same enum/struct types (`TokenMintType`, `TokenBurnType`, `RequestStatus`, `FundTokenData`, `DistributorRequest`). The differences are strictly ABI-driven.
 
 ## Overview
 
 This extension provides utilities for preparing DTA operations for fund subscriptions, redemptions, and management on blockchain networks. It works with DTARequestManagement and DTARequestSettlement smart contracts.
 
-## Usage
+## Usage (v1)
 
 ```go
 import (
     dtav1 "github.com/smartcontractkit/crec-sdk-ext-dta/v1"
 )
 
-// Create the DTA v1 extension
 ext, err := dtav1.New(&dtav1.Options{
     DTARequestManagementAddress: "0x...",
     DTARequestSettlementAddress: "0x...",
     AccountAddress:              "0x...",
 })
-if err != nil {
-    log.Fatal(err)
-}
 
-// Request subscription
 op, err := ext.PrepareRequestSubscriptionOperation(fundAdminAddr, fundTokenId, amount)
-
-// Request subscription with token approval (multi-transaction)
-op, err := ext.PrepareRequestSubscriptionWithTokenApprovalOperation(
-    fundAdminAddr, fundTokenId, amount, paymentTokenAddress,
-)
-
-// Register fund token with full metadata
-op, err := ext.PrepareRegisterFundTokenOperation(fundTokenId, tokenData)
-
-// Complete request processing
-op, err := ext.PrepareCompleteRequestProcessingOperation(requestId, true, []byte{})
 ```
 
-## Available Operations
+## Usage (v2)
+
+```go
+import (
+    dtav2 "github.com/smartcontractkit/crec-sdk-ext-dta/v2"
+)
+
+ext, err := dtav2.New(&dtav2.Options{
+    DTARequestManagementAddress: "0x...",
+    DTARequestSettlementAddress: "0x...",
+    AccountAddress:              "0x...",
+})
+
+// v2 operations accept a referenceID parameter
+op, err := ext.PrepareRequestSubscriptionOperation(fundAdminAddr, fundTokenId, amount, referenceID)
+```
+
+## v2 Changes from v1
+
+### New `referenceID` parameter
+
+Subscription and redemption operations now accept a `referenceID [32]byte` parameter for correlating on-chain requests with off-chain records:
+
+| Operation (v2)                          | Signature change                                                   |
+| --------------------------------------- | ------------------------------------------------------------------ |
+| `PrepareRequestSubscriptionOperation`   | Added `referenceID [32]byte` as last parameter                     |
+| `PrepareRequestRedemptionOperation`     | Added `referenceID [32]byte` as last parameter                     |
+
+The corresponding events (`SubscriptionRequested`, `RedemptionRequested`) now include a `ReferenceID common.Hash` field.
+
+### New event: `DistributorAuthorizationUpdated`
+
+Emitted when a distributor's authorization status changes for a fund token:
+
+| Field              | Type             |
+| ------------------ | ---------------- |
+| `DistributorAddr`  | `common.Address` |
+| `FundAdminAddr`    | `common.Address` |
+| `FundTokenId`      | `common.Hash`    |
+| `Authorized`       | `bool`           |
+
+### New operations
+
+| Operation                                     | Description                                  |
+| --------------------------------------------- | -------------------------------------------- |
+| `PrepareAuthorizeDistributorForTokenOperation` | Authorize a distributor for a fund token     |
+| `PrepareRevokeDistributorForTokenOperation`    | Revoke a distributor's token authorization   |
+
+### Removed operations (v1 only)
+
+| Operation                                      | Replacement                                    |
+| ---------------------------------------------- | ---------------------------------------------- |
+| `PrepareForceAllowDistributorForTokenOperation` | Use `PrepareAuthorizeDistributorForTokenOperation` |
+| `PrepareVerifyDistributorWalletOperation`       | Removed from v2 contracts                      |
+
+## Available Operations (v1)
 
 ### DTARequestManagement Operations
 
@@ -104,6 +145,8 @@ op, err := ext.PrepareDTARequestSettlementOperation("methodName", arg1, arg2, ..
 
 ## Types
 
+Types are shared across both v1 and v2 (defined in `<version>/events/types.go`).
+
 ### Token Mint Types
 
 | Constant                   | Value | Description                                       |
@@ -131,30 +174,48 @@ op, err := ext.PrepareDTARequestSettlementOperation("methodName", arg1, arg2, ..
 | `RequestStatusCanceled`   | 4     | Request was canceled       |
 | `RequestStatusFailed`     | 5     | Request failed             |
 
+## Decoding Events
+
+Both v1 and v2 provide a `DecodeFromEvent` function that extracts typed events and enrichment data from raw CREC events:
+
+```go
+decoded, err := dtav2.DecodeFromEvent(ctx, event)
+fmt.Println(decoded.EventName())        // e.g. EventSubscriptionRequested
+fmt.Println(decoded.ConcreteEvent)      // typed event struct
+fmt.Println(decoded.FundTokenData)      // enrichment: fund token metadata (if available)
+fmt.Println(decoded.DistributorRequest) // enrichment: request details (if available)
+```
+
 ## Project Structure
 
 ```
 crec-sdk-ext-dta/
 ├── v1/                              # DTA v1 contract SDK
-│   ├── abi/                         # Contract ABIs
-│   ├── bindings/                    # Generated Go bindings (abigen)
-│   ├── gen/                         # Code generator
-│   │   ├── main.go                  # Generator (from template)
-│   │   └── config.go                # DTA-specific configuration
+│   ├── events/                      # Event types and decoders
+│   │   ├── types.go                 # Enum and struct types
+│   │   ├── events_gen.go            # Generated: Event structs
+│   │   └── decode_gen.go            # Generated: Event decoders
+│   ├── operations/                  # Operations SDK
+│   │   ├── operations.go            # Custom operations (multi-tx, complex types)
+│   │   ├── abi_gen.go               # Generated: ABI embedding
+│   │   ├── extension_gen.go         # Generated: Options, Extension, New()
+│   │   ├── operations_gen.go        # Generated: Type-safe Prepare* functions
+│   │   └── operations_helpers_gen.go # Generated: Helper methods
 │   ├── watcher/                     # CRE watcher workflow
-│   │   ├── handler/                 # Workflow handler
-│   │   ├── values/                  # Configuration values
-│   │   └── *.tmpl                   # Templates
+│   │   ├── handler/                 # Workflow handler (enrichment logic)
+│   │   ├── bundle/                  # Bundle definition and schemas
+│   │   └── values/                  # Configuration values
 │   ├── doc.go                       # Package documentation
-│   ├── types.go                     # Enum and struct types
-│   ├── operations.go                # Custom operations (multi-tx, complex types)
-│   ├── decode.go                    # Event decoding logic
-│   ├── abi_gen.go                   # Generated: ABI embedding
-│   ├── extension_gen.go             # Generated: Options, Extension, New()
-│   ├── operations_gen.go            # Generated: Type-safe Prepare* functions
-│   ├── operations_helpers_gen.go    # Generated: Helper methods
-│   ├── events_gen.go                # Generated: Event structs
-│   └── decode_gen.go                # Generated: Event decoders
+│   └── decode.go                    # Event decoding + enrichment
+├── v2/                              # DTA v2 contract SDK (same layout as v1)
+│   ├── events/
+│   ├── operations/
+│   ├── watcher/
+│   ├── doc.go
+│   └── decode.go
+├── abi/                             # Contract ABI files
+│   ├── v1/
+│   └── v2/
 ├── mocks/                           # Mock server for local testing
 └── Taskfile.yaml                    # Task runner commands
 ```
@@ -169,18 +230,6 @@ Install [Task](https://taskfile.dev/):
 brew install go-task  # macOS
 ```
 
-### Code Generation
-
-Operations and event types are generated from contract ABIs. To regenerate after ABI changes:
-
-```bash
-# Install tools (one-time)
-task tools
-
-# Regenerate all code
-task generate
-```
-
 ### Running Tests
 
 ```bash
@@ -192,17 +241,17 @@ task test
 The watcher workflow monitors DTA contract events:
 
 ```bash
-# Configure watcher
-task watcher:config
+# Configure watcher (specify VERSION)
+task watcher:config VERSION=v2
 
 # Deploy to CRE
-task watcher:deploy
+task watcher:deploy VERSION=v2
 
 # Config + deploy
-task watcher:release
+task watcher:release VERSION=v2
 
 # Simulate with a transaction
-task watcher:simulate TX_HASH=0x...
+task watcher:simulate VERSION=v2 TX_HASH=0x...
 ```
 
 **Mock server for local simulation:**

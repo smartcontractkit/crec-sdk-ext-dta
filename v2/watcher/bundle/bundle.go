@@ -10,9 +10,6 @@ import (
 //go:embed binary.wasm
 var wasmBinary []byte
 
-//go:embed config.tmpl
-var configTemplate []byte
-
 //go:embed DTARequestManagementU.abi.json
 var dtaRequestManagementUABI string
 
@@ -22,10 +19,9 @@ var dtaRequestSettlementUABI string
 // Get returns the DTA v2 extension watcher bundle.
 func Get() *crecbundle.Bundle {
 	return &crecbundle.Bundle{
-		Service:        "dta.v2",
-		WasmBinary:     wasmBinary,
-		ConfigTemplate: configTemplate,
-		Contracts:      contracts,
+		Service:    "dta.v2",
+		WasmBinary: wasmBinary,
+		Contracts:  contracts,
 		Events:         events,
 	}
 }

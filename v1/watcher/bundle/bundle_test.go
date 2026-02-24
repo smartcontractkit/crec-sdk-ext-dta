@@ -16,7 +16,6 @@ func TestBundle_Get(t *testing.T) {
 	assert.Equal(t, "dta.v1", b.Service)
 	assert.NotEmpty(t, b.Contracts, "bundle should have contracts")
 	assert.NotEmpty(t, b.Events, "bundle should have events")
-	assert.NotEmpty(t, b.ConfigTemplate, "config template should be embedded")
 }
 
 func TestBundle_EventsSetup(t *testing.T) {

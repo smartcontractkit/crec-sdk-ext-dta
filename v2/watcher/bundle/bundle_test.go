@@ -17,10 +17,6 @@ func TestBundle_Get(t *testing.T) {
 		assert.Equal(t, "dta.v2", b.Service)
 	})
 
-	t.Run("ConfigTemplate", func(t *testing.T) {
-		assert.NotEmpty(t, b.ConfigTemplate)
-	})
-
 	t.Run("Contracts", func(t *testing.T) {
 		require.Len(t, b.Contracts, 2)
 		assert.Equal(t, "DTARequestManagement", b.Contracts[0].Name)

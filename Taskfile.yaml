@@ -23,11 +23,10 @@ tasks:
       - go test ./...
 
   tools:
-    desc: "Install required code generation tools"
+    desc: "Install required build tools"
     cmds:
-      - echo "📦 Installing code generation tools..."
-      - go install github.com/atombender/go-jsonschema@latest
-      - go install github.com/ethereum/go-ethereum/cmd/abigen@latest
+      - echo "📦 Installing build tools..."
+      - brew install brotli
       - echo "✅ Tools installed"
 
   deps:
@@ -113,6 +112,7 @@ tasks:
     generates:
       - "{{ .VERSION }}/watcher/wasm/workflow.wasm"
       - "{{ .VERSION }}/watcher/bundle/binary.wasm"
+      - "{{ .VERSION }}/watcher/bundle/binary.wasm.br.b64"
 
   watcher:check:sizes:
     desc: "Check WASM binary and config sizes against CRE limits"

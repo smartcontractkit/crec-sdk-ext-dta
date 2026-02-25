@@ -7,8 +7,8 @@ import (
 	crecbundle "github.com/smartcontractkit/crec-sdk/extension/bundle"
 )
 
-//go:embed binary.wasm
-var wasmBinary []byte
+//go:embed binary.wasm.br.b64
+var wasmBinaryBrB64 string
 
 //go:embed DTARequestManagementU.abi.json
 var dtaRequestManagementABI string
@@ -20,7 +20,7 @@ var dtaRequestSettlementABI string
 func Get() *crecbundle.Bundle {
 	return &crecbundle.Bundle{
 		Service:    "dta.v1",
-		WasmBinary: wasmBinary,
+		WasmBinary: []byte(wasmBinaryBrB64),
 		Contracts:  contracts,
 		Events:         events,
 	}

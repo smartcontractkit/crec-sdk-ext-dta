@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	workflows "github.com/smartcontractkit/cre-workflow-utils"
+	workflows "github.com/smartcontractkit/crec-workflow-utils"
 	apiClient "github.com/smartcontractkit/crec-api-go/client"
 	"github.com/smartcontractkit/crec-sdk-ext-dta/v1/events"
 )

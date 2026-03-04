@@ -19,7 +19,7 @@ import (
 	httpmock "github.com/smartcontractkit/cre-sdk-go/capabilities/networking/http/mock"
 	"github.com/smartcontractkit/cre-sdk-go/cre/testutils"
 
-	workflows "github.com/smartcontractkit/cre-workflow-utils"
+	workflows "github.com/smartcontractkit/crec-workflow-utils"
 	wf "github.com/smartcontractkit/crec-sdk-ext-dta/v1/watcher/handler"
 )
 

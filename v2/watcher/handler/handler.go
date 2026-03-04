@@ -15,7 +15,7 @@ import (
 
 	"github.com/smartcontractkit/cre-sdk-go/capabilities/blockchain/evm"
 	"github.com/smartcontractkit/cre-sdk-go/cre"
-	workflows "github.com/smartcontractkit/cre-workflow-utils"
+	workflows "github.com/smartcontractkit/crec-workflow-utils"
 	apiModels "github.com/smartcontractkit/crec-api-go/models"
 	dtaevents "github.com/smartcontractkit/crec-sdk-ext-dta/v2/events"
 )

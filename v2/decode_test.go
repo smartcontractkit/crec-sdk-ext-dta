@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
-	workflows "github.com/smartcontractkit/cre-workflow-utils"
+	workflows "github.com/smartcontractkit/crec-workflow-utils"
 	apiClient "github.com/smartcontractkit/crec-api-go/client"
 	apiModels "github.com/smartcontractkit/crec-api-go/models"
 	v2 "github.com/smartcontractkit/crec-sdk-ext-dta/v2"

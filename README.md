@@ -262,6 +262,11 @@ task mock:stop
 task mock:logs
 ```
 
+## Related
+
+- [crec-sdk](https://github.com/smartcontractkit/crec-sdk) — CREC client for channels, events, watchers, and operations
+- [crec-workflow-utils](https://github.com/smartcontractkit/crec-workflow-utils) — Shared utilities for event-listener workflows
+
 ## License
 
-See [LICENSE](LICENSE) for details.
+[MIT](LICENSE.md)

@@ -1,6 +1,6 @@
 # DTA Watcher
 
-The DTA watcher is a CRE (Chainlink Runtime Environment) workflow compiled to WASM that monitors DTA smart contract events on-chain. When an event is detected, the handler decodes it, enriches it with on-chain reference data, and posts a signed `VerifiableEvent` to the Courier service for delivery to users.
+The DTA watcher is a CRE (Chainlink Runtime Environment) workflow compiled to WASM that monitors DTA smart contract events on-chain. When an event is detected, the handler decodes it, enriches it with on-chain reference data, and posts a signed `VerifiableEvent` to the CREC API for delivery to users.
 
 ## Processing Flow
 
@@ -27,7 +27,7 @@ OnLog()                              ─── Main handler entry point
   ├─ BuildVerifiableEventForEVMEvent()  ─── Package into VerifiableEvent
   │
   ▼
-SignAndPostVerifiableEvent()            ─── Sign and POST to Courier
+SignAndPostVerifiableEvent()            ─── Sign and POST to CREC API
 ```
 
 ## VerifiableEvent Structure
@@ -74,7 +74,7 @@ Each event in the bundle exposes two JSON Schema fields:
 
 Consumers can use `ParamsSchema` to decode the event parameters and `DataSchema` to understand what enrichment data (if any) is attached.
 
-> **Tip:** If you're receiving events from the Courier API as `apiClient.Event`, the easiest path is to call `v1.DecodeFromEvent(ctx, event)` which handles all decoding for you — parsing the `VerifiableEvent`, decoding chain event params into typed Go structs, and extracting enrichment data (`FundTokenData`, `DistributorRequest`, `PaymentRequests`). The schemas here are primarily useful for non-Go consumers or UI rendering.
+> **Tip:** If you're receiving events from the CREC API as `apiClient.Event`, the easiest path is to call `v1.DecodeFromEvent(ctx, event)` which handles all decoding for you — parsing the `VerifiableEvent`, decoding chain event params into typed Go structs, and extracting enrichment data (`FundTokenData`, `DistributorRequest`, `PaymentRequests`). The schemas here are primarily useful for non-Go consumers or UI rendering.
 
 ## Supported Events
 

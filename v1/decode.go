@@ -18,13 +18,17 @@ const (
 	getDistributorRequestSig  = "getDistributorRequest(bytes32)"
 )
 
-// DecodedEvent wraps WatcherEventPayload with a decoded ConcreteEvent.
+// DecodedEvent wraps WatcherEventPayload with a decoded ConcreteEvent and enrichment data.
 type DecodedEvent struct {
 	apiClient.WatcherEventPayload
-	ConcreteEvent      events.ConcreteEvent
-	FundTokenData      *events.FundTokenData
+	// ConcreteEvent is the decoded event struct matching the blockchain event type.
+	ConcreteEvent events.ConcreteEvent
+	// FundTokenData holds fund token configuration from on-chain reference data, when present.
+	FundTokenData *events.FundTokenData
+	// DistributorRequest holds the distributor request from on-chain reference data, when present.
 	DistributorRequest *events.DistributorRequest
-	PaymentRequests    []workflows.PaymentRequest
+	// PaymentRequests holds payment requests from the verifiable event reference data.
+	PaymentRequests []workflows.PaymentRequest
 }
 
 // EventName returns the parsed event name from the payload.
@@ -41,7 +45,7 @@ func (e DecodedEvent) EventName() events.EventName {
 }
 
 // DecodeFromEvent extracts the WatcherEventPayload from an apiClient.Event and decodes
-// the ConcreteEvent based on the event type.
+// the ConcreteEvent and enrichment data (FundTokenData, DistributorRequest, PaymentRequests) based on the event type.
 func DecodeFromEvent(ctx context.Context, event apiClient.Event) (DecodedEvent, error) {
 	payload, err := event.Payload.AsWatcherEventPayload()
 	if err != nil {

@@ -18,7 +18,7 @@
 local-simulation:
   rpcs:
     - chain-name: ethereum-testnet-sepolia
-      url: https://rpcs.main.stage.cldev.sh/ethereum/sepolia
+      url: "${SEPOLIA_RPC_URL}"
 
 # ==========================================================================
 staging:
@@ -28,6 +28,6 @@ staging:
   #   workflow-owner-address: "(optional) Multi-signature contract address"
   rpcs:
     - chain-name: ethereum-testnet-sepolia
-      url: https://rpcs.main.stage.cldev.sh/ethereum/sepolia
+      url: "${SEPOLIA_RPC_URL}"
     - chain-name: ethereum-testnet-sepolia-base-1
-      url: https://rpcs.main.stage.cldev.sh/base/sepolia
+      url: "${BASE_SEPOLIA_RPC_URL}"

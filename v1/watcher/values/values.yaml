@@ -19,6 +19,7 @@ workflowName: "watcher-dta-v1"
 network: "evm"
 chainId: "11155111"
 chainSelector: 16015286601757825753
+confidenceLevel: "latest"
 
 # Trigger configuration
 triggerContractName: "DTARequestSettlement"

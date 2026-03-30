@@ -19,7 +19,8 @@ type EventName string
 
 const (
 	EventAnswerUpdated                        EventName = "AnswerUpdated"
-	EventCCIPMessageRecvFailed                EventName = "CCIPMessageRecvFailed"
+	EventCCIPMessageDecodeFailed              EventName = "CCIPMessageDecodeFailed"
+	EventCCIPMessageHandleFailed              EventName = "CCIPMessageHandleFailed"
 	EventDTAAdded                             EventName = "DTAAdded"
 	EventDTARemoved                           EventName = "DTARemoved"
 	EventDTASettlementClosed                  EventName = "DTASettlementClosed"
@@ -40,6 +41,7 @@ const (
 	EventNativeFundsRecovered                 EventName = "NativeFundsRecovered"
 	EventOwnershipTransferred                 EventName = "OwnershipTransferred"
 	EventRedemptionRequested                  EventName = "RedemptionRequested"
+	EventRequestAlreadyProcessed              EventName = "RequestAlreadyProcessed"
 	EventSettlementFailed                     EventName = "SettlementFailed"
 	EventSubscriptionRequested                EventName = "SubscriptionRequested"
 	EventTokenWithdrawn                       EventName = "TokenWithdrawn"
@@ -49,7 +51,8 @@ const (
 
 var allEvents = map[string]EventName{
 	string(EventAnswerUpdated):                        EventAnswerUpdated,
-	string(EventCCIPMessageRecvFailed):                EventCCIPMessageRecvFailed,
+	string(EventCCIPMessageDecodeFailed):              EventCCIPMessageDecodeFailed,
+	string(EventCCIPMessageHandleFailed):              EventCCIPMessageHandleFailed,
 	string(EventDTAAdded):                             EventDTAAdded,
 	string(EventDTARemoved):                           EventDTARemoved,
 	string(EventDTASettlementClosed):                  EventDTASettlementClosed,
@@ -70,6 +73,7 @@ var allEvents = map[string]EventName{
 	string(EventNativeFundsRecovered):                 EventNativeFundsRecovered,
 	string(EventOwnershipTransferred):                 EventOwnershipTransferred,
 	string(EventRedemptionRequested):                  EventRedemptionRequested,
+	string(EventRequestAlreadyProcessed):              EventRequestAlreadyProcessed,
 	string(EventSettlementFailed):                     EventSettlementFailed,
 	string(EventSubscriptionRequested):                EventSubscriptionRequested,
 	string(EventTokenWithdrawn):                       EventTokenWithdrawn,
@@ -93,10 +97,19 @@ type AnswerUpdated struct {
 	UpdatedAt *big.Int `json:"updated_at"`
 }
 
-// CCIPMessageRecvFailed event.
-type CCIPMessageRecvFailed struct {
-	MessageId common.Hash `json:"message_id"`
-	Reason    []byte      `json:"reason"`
+// CCIPMessageDecodeFailed event.
+type CCIPMessageDecodeFailed struct {
+	MessageId           common.Hash `json:"message_id"`
+	SourceChainSelector uint64      `json:"source_chain_selector"`
+	Reason              []byte      `json:"reason"`
+}
+
+// CCIPMessageHandleFailed event.
+type CCIPMessageHandleFailed struct {
+	MessageId           common.Hash    `json:"message_id"`
+	SourceChainSelector uint64         `json:"source_chain_selector"`
+	DtaAddr             common.Address `json:"dta_addr"`
+	Reason              []byte         `json:"reason"`
 }
 
 // DTAAdded event.
@@ -185,8 +198,10 @@ type DistributorRequestProcessing struct {
 
 // EmptyRequestType event.
 type EmptyRequestType struct {
-	MessageId common.Hash `json:"message_id"`
-	RequestId common.Hash `json:"request_id"`
+	MessageId           common.Hash    `json:"message_id"`
+	SourceChainSelector uint64         `json:"source_chain_selector"`
+	DtaAddr             common.Address `json:"dta_addr"`
+	RequestId           common.Hash    `json:"request_id"`
 }
 
 // FundAdminRegistered event.
@@ -230,6 +245,8 @@ type InvalidSubscriptionCrossChainPayment struct {
 	FundAdminAddr              common.Address `json:"fund_admin_addr"`
 	FundTokenId                common.Hash    `json:"fund_token_id"`
 	RequestId                  common.Hash    `json:"request_id"`
+	DtaChainSelector           uint64         `json:"dta_chain_selector"`
+	DtaAddr                    common.Address `json:"dta_addr"`
 	PaymentTokenDestAddr       common.Address `json:"payment_token_dest_addr"`
 	CcipDestTokenAmountsLength *big.Int       `json:"ccip_dest_token_amounts_length"`
 	CcipPaymentTokenAddr       common.Address `json:"ccip_payment_token_addr"`
@@ -264,11 +281,22 @@ type RedemptionRequested struct {
 	CreatedAt       uint64         `json:"created_at"`
 }
 
+// RequestAlreadyProcessed event.
+type RequestAlreadyProcessed struct {
+	RequestId        common.Hash    `json:"request_id"`
+	DtaAddr          common.Address `json:"dta_addr"`
+	DtaChainSelector uint64         `json:"dta_chain_selector"`
+	FundAdminAddr    common.Address `json:"fund_admin_addr"`
+	FundTokenId      common.Hash    `json:"fund_token_id"`
+}
+
 // SettlementFailed event.
 type SettlementFailed struct {
 	FundAdminAddr         common.Address `json:"fund_admin_addr"`
 	FundTokenId           common.Hash    `json:"fund_token_id"`
 	DistributorAddr       common.Address `json:"distributor_addr"`
+	DtaChainSelector      uint64         `json:"dta_chain_selector"`
+	DtaAddr               common.Address `json:"dta_addr"`
 	PaymentTokenAddr      common.Address `json:"payment_token_addr"`
 	DistributorWalletAddr common.Address `json:"distributor_wallet_addr"`
 	RequestId             common.Hash    `json:"request_id"`

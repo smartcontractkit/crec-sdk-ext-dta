@@ -39,8 +39,8 @@ func (e *Extension) PrepareCancelDistributorRequestOperation(requestId [32]byte)
 }
 
 // PrepareCompleteRequestProcessingOperation prepares a completeRequestProcessing operation on DTARequestSettlement.
-func (e *Extension) PrepareCompleteRequestProcessingOperation(requestId [32]byte, success bool, err []byte) (*transactTypes.Operation, error) {
-	return e.prepareDTARequestSettlementOp("completeRequestProcessing", requestId, success, err)
+func (e *Extension) PrepareCompleteRequestProcessingOperation(requestId [32]byte, success bool, err []byte, revertOnErr bool) (*transactTypes.Operation, error) {
+	return e.prepareDTARequestSettlementOp("completeRequestProcessing", requestId, success, err, revertOnErr)
 }
 
 // PrepareDisableFundTokenOperation prepares a disableFundToken operation on DTARequestManagement.

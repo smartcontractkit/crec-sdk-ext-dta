@@ -17,6 +17,11 @@
         "name": "err",
         "type": "bytes",
         "internalType": "bytes"
+      },
+      {
+        "name": "revertOnErr",
+        "type": "bool",
+        "internalType": "bool"
       }
     ],
     "outputs": [],

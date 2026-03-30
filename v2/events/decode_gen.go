@@ -26,7 +26,8 @@ type EventDecoder func(params map[string]string, txHash string) (ConcreteEvent, 
 // eventDecoders maps event names to their decoder functions.
 var eventDecoders = map[EventName]EventDecoder{
 	EventAnswerUpdated:                        decodeAnswerUpdated,
-	EventCCIPMessageRecvFailed:                decodeCCIPMessageRecvFailed,
+	EventCCIPMessageDecodeFailed:              decodeCCIPMessageDecodeFailed,
+	EventCCIPMessageHandleFailed:              decodeCCIPMessageHandleFailed,
 	EventDTAAdded:                             decodeDTAAdded,
 	EventDTARemoved:                           decodeDTARemoved,
 	EventDTASettlementClosed:                  decodeDTASettlementClosed,
@@ -47,6 +48,7 @@ var eventDecoders = map[EventName]EventDecoder{
 	EventNativeFundsRecovered:                 decodeNativeFundsRecovered,
 	EventOwnershipTransferred:                 decodeOwnershipTransferred,
 	EventRedemptionRequested:                  decodeRedemptionRequested,
+	EventRequestAlreadyProcessed:              decodeRequestAlreadyProcessed,
 	EventSettlementFailed:                     decodeSettlementFailed,
 	EventSubscriptionRequested:                decodeSubscriptionRequested,
 	EventTokenWithdrawn:                       decodeTokenWithdrawn,
@@ -78,10 +80,28 @@ func decodeAnswerUpdated(params map[string]string, _ string) (ConcreteEvent, err
 	}, nil
 }
 
-func decodeCCIPMessageRecvFailed(params map[string]string, _ string) (ConcreteEvent, error) {
-	return &CCIPMessageRecvFailed{
-		MessageId: common.HexToHash(params["message_id"]),
-		Reason:    []byte(params["reason"]),
+func decodeCCIPMessageDecodeFailed(params map[string]string, _ string) (ConcreteEvent, error) {
+	sourceChainSelector, err := parsing.ScientificNotationToUint64(params["source_chain_selector"])
+	if err != nil {
+		return nil, fmt.Errorf("parse source_chain_selector %q: %w", params["source_chain_selector"], err)
+	}
+	return &CCIPMessageDecodeFailed{
+		MessageId:           common.HexToHash(params["message_id"]),
+		SourceChainSelector: sourceChainSelector,
+		Reason:              []byte(params["reason"]),
+	}, nil
+}
+
+func decodeCCIPMessageHandleFailed(params map[string]string, _ string) (ConcreteEvent, error) {
+	sourceChainSelector, err := parsing.ScientificNotationToUint64(params["source_chain_selector"])
+	if err != nil {
+		return nil, fmt.Errorf("parse source_chain_selector %q: %w", params["source_chain_selector"], err)
+	}
+	return &CCIPMessageHandleFailed{
+		MessageId:           common.HexToHash(params["message_id"]),
+		SourceChainSelector: sourceChainSelector,
+		DtaAddr:             common.HexToAddress(params["dta_addr"]),
+		Reason:              []byte(params["reason"]),
 	}, nil
 }
 
@@ -239,9 +259,15 @@ func decodeDistributorRequestProcessing(params map[string]string, _ string) (Con
 }
 
 func decodeEmptyRequestType(params map[string]string, _ string) (ConcreteEvent, error) {
+	sourceChainSelector, err := parsing.ScientificNotationToUint64(params["source_chain_selector"])
+	if err != nil {
+		return nil, fmt.Errorf("parse source_chain_selector %q: %w", params["source_chain_selector"], err)
+	}
 	return &EmptyRequestType{
-		MessageId: common.HexToHash(params["message_id"]),
-		RequestId: common.HexToHash(params["request_id"]),
+		MessageId:           common.HexToHash(params["message_id"]),
+		SourceChainSelector: sourceChainSelector,
+		DtaAddr:             common.HexToAddress(params["dta_addr"]),
+		RequestId:           common.HexToHash(params["request_id"]),
 	}, nil
 }
 
@@ -303,6 +329,10 @@ func decodeInvalidDTARequestSettlement(params map[string]string, _ string) (Conc
 }
 
 func decodeInvalidSubscriptionCrossChainPayment(params map[string]string, _ string) (ConcreteEvent, error) {
+	dtaChainSelector, err := parsing.ScientificNotationToUint64(params["dta_chain_selector"])
+	if err != nil {
+		return nil, fmt.Errorf("parse dta_chain_selector %q: %w", params["dta_chain_selector"], err)
+	}
 	ccipDestTokenAmountsLength, err := parsing.ScientificNotationToBigInt(params["ccip_dest_token_amounts_length"])
 	if err != nil {
 		return nil, fmt.Errorf("parse ccip_dest_token_amounts_length %q: %w", params["ccip_dest_token_amounts_length"], err)
@@ -311,6 +341,8 @@ func decodeInvalidSubscriptionCrossChainPayment(params map[string]string, _ stri
 		FundAdminAddr:              common.HexToAddress(params["fund_admin_addr"]),
 		FundTokenId:                common.HexToHash(params["fund_token_id"]),
 		RequestId:                  common.HexToHash(params["request_id"]),
+		DtaChainSelector:           dtaChainSelector,
+		DtaAddr:                    common.HexToAddress(params["dta_addr"]),
 		PaymentTokenDestAddr:       common.HexToAddress(params["payment_token_dest_addr"]),
 		CcipDestTokenAmountsLength: ccipDestTokenAmountsLength,
 		CcipPaymentTokenAddr:       common.HexToAddress(params["ccip_payment_token_addr"]),
@@ -362,7 +394,25 @@ func decodeRedemptionRequested(params map[string]string, _ string) (ConcreteEven
 	}, nil
 }
 
+func decodeRequestAlreadyProcessed(params map[string]string, _ string) (ConcreteEvent, error) {
+	dtaChainSelector, err := parsing.ScientificNotationToUint64(params["dta_chain_selector"])
+	if err != nil {
+		return nil, fmt.Errorf("parse dta_chain_selector %q: %w", params["dta_chain_selector"], err)
+	}
+	return &RequestAlreadyProcessed{
+		RequestId:        common.HexToHash(params["request_id"]),
+		DtaAddr:          common.HexToAddress(params["dta_addr"]),
+		DtaChainSelector: dtaChainSelector,
+		FundAdminAddr:    common.HexToAddress(params["fund_admin_addr"]),
+		FundTokenId:      common.HexToHash(params["fund_token_id"]),
+	}, nil
+}
+
 func decodeSettlementFailed(params map[string]string, _ string) (ConcreteEvent, error) {
+	dtaChainSelector, err := parsing.ScientificNotationToUint64(params["dta_chain_selector"])
+	if err != nil {
+		return nil, fmt.Errorf("parse dta_chain_selector %q: %w", params["dta_chain_selector"], err)
+	}
 	shares, err := parsing.ScientificNotationToBigInt(params["shares"])
 	if err != nil {
 		return nil, fmt.Errorf("parse shares %q: %w", params["shares"], err)
@@ -375,6 +425,8 @@ func decodeSettlementFailed(params map[string]string, _ string) (ConcreteEvent, 
 		FundAdminAddr:         common.HexToAddress(params["fund_admin_addr"]),
 		FundTokenId:           common.HexToHash(params["fund_token_id"]),
 		DistributorAddr:       common.HexToAddress(params["distributor_addr"]),
+		DtaChainSelector:      dtaChainSelector,
+		DtaAddr:               common.HexToAddress(params["dta_addr"]),
 		PaymentTokenAddr:      common.HexToAddress(params["payment_token_addr"]),
 		DistributorWalletAddr: common.HexToAddress(params["distributor_wallet_addr"]),
 		RequestId:             common.HexToHash(params["request_id"]),

@@ -87,7 +87,7 @@
         "internalType": "bool"
       },
       {
-        "name": "",
+        "name": "fundTokenData",
         "type": "tuple",
         "internalType": "struct IFundTokenRegistry.FundTokenData",
         "components": [

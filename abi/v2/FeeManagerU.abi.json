@@ -1,0 +1,1355 @@
+[
+    {
+        "type": "constructor",
+        "inputs": [],
+        "stateMutability": "nonpayable"
+    },
+    {
+        "type": "function",
+        "name": "addSupportedFeeToken",
+        "inputs": [
+            {
+                "name": "feeTokenAddr",
+                "type": "address",
+                "internalType": "address"
+            },
+            {
+                "name": "tokenType",
+                "type": "uint8",
+                "internalType": "enum IFeeManager.FeeTokenType"
+            },
+            {
+                "name": "priceFeedAddr",
+                "type": "address",
+                "internalType": "address"
+            },
+            {
+                "name": "feeTokenDecimals",
+                "type": "uint8",
+                "internalType": "uint8"
+            }
+        ],
+        "outputs": [],
+        "stateMutability": "nonpayable"
+    },
+    {
+        "type": "function",
+        "name": "allowProductForAction",
+        "inputs": [
+            {
+                "name": "productAddr",
+                "type": "address",
+                "internalType": "address"
+            },
+            {
+                "name": "actionId",
+                "type": "bytes32",
+                "internalType": "bytes32"
+            },
+            {
+                "name": "feeTokenAddr",
+                "type": "address",
+                "internalType": "address"
+            }
+        ],
+        "outputs": [],
+        "stateMutability": "nonpayable"
+    },
+    {
+        "type": "function",
+        "name": "chargeFee",
+        "inputs": [
+            {
+                "name": "actionId",
+                "type": "bytes32",
+                "internalType": "bytes32"
+            },
+            {
+                "name": "productRequestId",
+                "type": "bytes32",
+                "internalType": "bytes32"
+            }
+        ],
+        "outputs": [],
+        "stateMutability": "nonpayable"
+    },
+    {
+        "type": "function",
+        "name": "createUserTokenAccount",
+        "inputs": [
+            {
+                "name": "feeTokenAddr",
+                "type": "address",
+                "internalType": "address"
+            }
+        ],
+        "outputs": [],
+        "stateMutability": "nonpayable"
+    },
+    {
+        "type": "function",
+        "name": "disallowProductForAction",
+        "inputs": [
+            {
+                "name": "productAddr",
+                "type": "address",
+                "internalType": "address"
+            },
+            {
+                "name": "actionId",
+                "type": "bytes32",
+                "internalType": "bytes32"
+            },
+            {
+                "name": "feeTokenAddr",
+                "type": "address",
+                "internalType": "address"
+            }
+        ],
+        "outputs": [],
+        "stateMutability": "nonpayable"
+    },
+    {
+        "type": "function",
+        "name": "getActionFee",
+        "inputs": [
+            {
+                "name": "actionId",
+                "type": "bytes32",
+                "internalType": "bytes32"
+            }
+        ],
+        "outputs": [
+            {
+                "name": "",
+                "type": "uint256",
+                "internalType": "uint256"
+            }
+        ],
+        "stateMutability": "view"
+    },
+    {
+        "type": "function",
+        "name": "getDiscount",
+        "inputs": [
+            {
+                "name": "discountId",
+                "type": "bytes32",
+                "internalType": "bytes32"
+            }
+        ],
+        "outputs": [
+            {
+                "name": "",
+                "type": "uint16",
+                "internalType": "uint16"
+            }
+        ],
+        "stateMutability": "view"
+    },
+    {
+        "type": "function",
+        "name": "getSupportedFeeToken",
+        "inputs": [
+            {
+                "name": "feeTokenAddr",
+                "type": "address",
+                "internalType": "address"
+            }
+        ],
+        "outputs": [
+            {
+                "name": "",
+                "type": "tuple",
+                "internalType": "struct IFeeManager.FeeToken",
+                "components": [
+                    {
+                        "name": "tokenType",
+                        "type": "uint8",
+                        "internalType": "enum IFeeManager.FeeTokenType"
+                    },
+                    {
+                        "name": "feeTokenDecimals",
+                        "type": "uint8",
+                        "internalType": "uint8"
+                    },
+                    {
+                        "name": "priceFeedDecimals",
+                        "type": "uint8",
+                        "internalType": "uint8"
+                    },
+                    {
+                        "name": "priceFeedAddr",
+                        "type": "address",
+                        "internalType": "address"
+                    },
+                    {
+                        "name": "totalAccountsBalance",
+                        "type": "uint256",
+                        "internalType": "uint256"
+                    }
+                ]
+            }
+        ],
+        "stateMutability": "view"
+    },
+    {
+        "type": "function",
+        "name": "getUserTokenAccount",
+        "inputs": [
+            {
+                "name": "userAddr",
+                "type": "address",
+                "internalType": "address"
+            },
+            {
+                "name": "feeTokenAddr",
+                "type": "address",
+                "internalType": "address"
+            }
+        ],
+        "outputs": [
+            {
+                "name": "",
+                "type": "tuple",
+                "internalType": "struct IFeeManager.UserTokenAccount",
+                "components": [
+                    {
+                        "name": "token",
+                        "type": "address",
+                        "internalType": "address"
+                    },
+                    {
+                        "name": "balance",
+                        "type": "uint256",
+                        "internalType": "uint256"
+                    },
+                    {
+                        "name": "held",
+                        "type": "uint256",
+                        "internalType": "uint256"
+                    }
+                ]
+            }
+        ],
+        "stateMutability": "view"
+    },
+    {
+        "type": "function",
+        "name": "initialize",
+        "inputs": [
+            {
+                "name": "nativePriceFeedAddr",
+                "type": "address",
+                "internalType": "address"
+            },
+            {
+                "name": "nativeDecimals",
+                "type": "uint8",
+                "internalType": "uint8"
+            },
+            {
+                "name": "stalenessSeconds",
+                "type": "uint24",
+                "internalType": "uint24"
+            }
+        ],
+        "outputs": [],
+        "stateMutability": "nonpayable"
+    },
+    {
+        "type": "function",
+        "name": "isProductAllowed",
+        "inputs": [
+            {
+                "name": "productAddr",
+                "type": "address",
+                "internalType": "address"
+            },
+            {
+                "name": "actionId",
+                "type": "bytes32",
+                "internalType": "bytes32"
+            },
+            {
+                "name": "userAddr",
+                "type": "address",
+                "internalType": "address"
+            },
+            {
+                "name": "feeTokenAddr",
+                "type": "address",
+                "internalType": "address"
+            }
+        ],
+        "outputs": [
+            {
+                "name": "",
+                "type": "bool",
+                "internalType": "bool"
+            }
+        ],
+        "stateMutability": "view"
+    },
+    {
+        "type": "function",
+        "name": "onTokenTransfer",
+        "inputs": [
+            {
+                "name": "",
+                "type": "address",
+                "internalType": "address"
+            },
+            {
+                "name": "amount",
+                "type": "uint256",
+                "internalType": "uint256"
+            },
+            {
+                "name": "data",
+                "type": "bytes",
+                "internalType": "bytes"
+            }
+        ],
+        "outputs": [],
+        "stateMutability": "nonpayable"
+    },
+    {
+        "type": "function",
+        "name": "owner",
+        "inputs": [],
+        "outputs": [
+            {
+                "name": "",
+                "type": "address",
+                "internalType": "address"
+            }
+        ],
+        "stateMutability": "view"
+    },
+    {
+        "type": "function",
+        "name": "recoverExcessBalance",
+        "inputs": [
+            {
+                "name": "feeTokenAddr",
+                "type": "address",
+                "internalType": "address"
+            },
+            {
+                "name": "to",
+                "type": "address",
+                "internalType": "address"
+            },
+            {
+                "name": "amount",
+                "type": "uint256",
+                "internalType": "uint256"
+            }
+        ],
+        "outputs": [],
+        "stateMutability": "nonpayable"
+    },
+    {
+        "type": "function",
+        "name": "refundFee",
+        "inputs": [
+            {
+                "name": "actionId",
+                "type": "bytes32",
+                "internalType": "bytes32"
+            },
+            {
+                "name": "productRequestId",
+                "type": "bytes32",
+                "internalType": "bytes32"
+            }
+        ],
+        "outputs": [],
+        "stateMutability": "nonpayable"
+    },
+    {
+        "type": "function",
+        "name": "renounceOwnership",
+        "inputs": [],
+        "outputs": [],
+        "stateMutability": "nonpayable"
+    },
+    {
+        "type": "function",
+        "name": "reserveAndChargeFee1D",
+        "inputs": [
+            {
+                "name": "prevActionId",
+                "type": "bytes32",
+                "internalType": "bytes32"
+            },
+            {
+                "name": "actionId",
+                "type": "bytes32",
+                "internalType": "bytes32"
+            },
+            {
+                "name": "productRequestId",
+                "type": "bytes32",
+                "internalType": "bytes32"
+            },
+            {
+                "name": "userAddr",
+                "type": "address",
+                "internalType": "address"
+            },
+            {
+                "name": "discountId1",
+                "type": "bytes32",
+                "internalType": "bytes32"
+            }
+        ],
+        "outputs": [],
+        "stateMutability": "nonpayable"
+    },
+    {
+        "type": "function",
+        "name": "reserveFee",
+        "inputs": [
+            {
+                "name": "actionId",
+                "type": "bytes32",
+                "internalType": "bytes32"
+            },
+            {
+                "name": "productRequestId",
+                "type": "bytes32",
+                "internalType": "bytes32"
+            },
+            {
+                "name": "userAddr",
+                "type": "address",
+                "internalType": "address"
+            },
+            {
+                "name": "discountCodes",
+                "type": "bytes32[]",
+                "internalType": "bytes32[]"
+            }
+        ],
+        "outputs": [],
+        "stateMutability": "nonpayable"
+    },
+    {
+        "type": "function",
+        "name": "reserveFee1D",
+        "inputs": [
+            {
+                "name": "actionId",
+                "type": "bytes32",
+                "internalType": "bytes32"
+            },
+            {
+                "name": "productRequestId",
+                "type": "bytes32",
+                "internalType": "bytes32"
+            },
+            {
+                "name": "userAddr",
+                "type": "address",
+                "internalType": "address"
+            },
+            {
+                "name": "discountCode1",
+                "type": "bytes32",
+                "internalType": "bytes32"
+            }
+        ],
+        "outputs": [],
+        "stateMutability": "nonpayable"
+    },
+    {
+        "type": "function",
+        "name": "setActionFee",
+        "inputs": [
+            {
+                "name": "actionId",
+                "type": "bytes32",
+                "internalType": "bytes32"
+            },
+            {
+                "name": "fee",
+                "type": "uint256",
+                "internalType": "uint256"
+            }
+        ],
+        "outputs": [],
+        "stateMutability": "nonpayable"
+    },
+    {
+        "type": "function",
+        "name": "setDiscount",
+        "inputs": [
+            {
+                "name": "discountId",
+                "type": "bytes32",
+                "internalType": "bytes32"
+            },
+            {
+                "name": "discountPercent",
+                "type": "uint16",
+                "internalType": "uint16"
+            }
+        ],
+        "outputs": [],
+        "stateMutability": "nonpayable"
+    },
+    {
+        "type": "function",
+        "name": "topupERC20UserTokenAccount",
+        "inputs": [
+            {
+                "name": "userAddr",
+                "type": "address",
+                "internalType": "address"
+            },
+            {
+                "name": "feeTokenAddr",
+                "type": "address",
+                "internalType": "address"
+            },
+            {
+                "name": "amount",
+                "type": "uint256",
+                "internalType": "uint256"
+            }
+        ],
+        "outputs": [],
+        "stateMutability": "nonpayable"
+    },
+    {
+        "type": "function",
+        "name": "topupNativeUserTokenAccount",
+        "inputs": [
+            {
+                "name": "userAddr",
+                "type": "address",
+                "internalType": "address"
+            }
+        ],
+        "outputs": [],
+        "stateMutability": "payable"
+    },
+    {
+        "type": "function",
+        "name": "transferOwnership",
+        "inputs": [
+            {
+                "name": "newOwner",
+                "type": "address",
+                "internalType": "address"
+            }
+        ],
+        "outputs": [],
+        "stateMutability": "nonpayable"
+    },
+    {
+        "type": "function",
+        "name": "updateSupportedFeeToken",
+        "inputs": [
+            {
+                "name": "feeTokenAddr",
+                "type": "address",
+                "internalType": "address"
+            },
+            {
+                "name": "priceFeedAddr",
+                "type": "address",
+                "internalType": "address"
+            }
+        ],
+        "outputs": [],
+        "stateMutability": "nonpayable"
+    },
+    {
+        "type": "function",
+        "name": "withdrawAvailableBalance",
+        "inputs": [
+            {
+                "name": "feeTokenAddr",
+                "type": "address",
+                "internalType": "address"
+            },
+            {
+                "name": "to",
+                "type": "address",
+                "internalType": "address"
+            }
+        ],
+        "outputs": [],
+        "stateMutability": "nonpayable"
+    },
+    {
+        "type": "function",
+        "name": "withdrawBalance",
+        "inputs": [
+            {
+                "name": "feeTokenAddr",
+                "type": "address",
+                "internalType": "address"
+            },
+            {
+                "name": "to",
+                "type": "address",
+                "internalType": "address"
+            },
+            {
+                "name": "amount",
+                "type": "uint256",
+                "internalType": "uint256"
+            }
+        ],
+        "outputs": [],
+        "stateMutability": "nonpayable"
+    },
+    {
+        "type": "function",
+        "name": "withdrawNativeBalance",
+        "inputs": [
+            {
+                "name": "to",
+                "type": "address",
+                "internalType": "address"
+            },
+            {
+                "name": "amount",
+                "type": "uint256",
+                "internalType": "uint256"
+            }
+        ],
+        "outputs": [],
+        "stateMutability": "nonpayable"
+    },
+    {
+        "type": "event",
+        "name": "ActionFeeSet",
+        "inputs": [
+            {
+                "name": "actionId",
+                "type": "bytes32",
+                "indexed": false,
+                "internalType": "bytes32"
+            },
+            {
+                "name": "fee",
+                "type": "uint256",
+                "indexed": false,
+                "internalType": "uint256"
+            }
+        ],
+        "anonymous": false
+    },
+    {
+        "type": "event",
+        "name": "DiscountSet",
+        "inputs": [
+            {
+                "name": "discountId",
+                "type": "bytes32",
+                "indexed": false,
+                "internalType": "bytes32"
+            },
+            {
+                "name": "discount",
+                "type": "uint16",
+                "indexed": false,
+                "internalType": "uint16"
+            }
+        ],
+        "anonymous": false
+    },
+    {
+        "type": "event",
+        "name": "ExcessBalanceRecovered",
+        "inputs": [
+            {
+                "name": "userAddr",
+                "type": "address",
+                "indexed": false,
+                "internalType": "address"
+            },
+            {
+                "name": "tokenAddr",
+                "type": "address",
+                "indexed": false,
+                "internalType": "address"
+            },
+            {
+                "name": "amount",
+                "type": "uint256",
+                "indexed": false,
+                "internalType": "uint256"
+            }
+        ],
+        "anonymous": false
+    },
+    {
+        "type": "event",
+        "name": "FeeCharged",
+        "inputs": [
+            {
+                "name": "userAddr",
+                "type": "address",
+                "indexed": false,
+                "internalType": "address"
+            },
+            {
+                "name": "tokenAddr",
+                "type": "address",
+                "indexed": false,
+                "internalType": "address"
+            },
+            {
+                "name": "actionId",
+                "type": "bytes32",
+                "indexed": false,
+                "internalType": "bytes32"
+            },
+            {
+                "name": "amount",
+                "type": "uint256",
+                "indexed": false,
+                "internalType": "uint256"
+            }
+        ],
+        "anonymous": false
+    },
+    {
+        "type": "event",
+        "name": "FeeTokenFeeAfterConversion",
+        "inputs": [
+            {
+                "name": "initialFiatFee",
+                "type": "uint256",
+                "indexed": false,
+                "internalType": "uint256"
+            },
+            {
+                "name": "fiatFeeAfterDiscount",
+                "type": "uint256",
+                "indexed": false,
+                "internalType": "uint256"
+            },
+            {
+                "name": "exchangeRate",
+                "type": "int256",
+                "indexed": false,
+                "internalType": "int256"
+            },
+            {
+                "name": "feeTokenFee",
+                "type": "uint256",
+                "indexed": false,
+                "internalType": "uint256"
+            }
+        ],
+        "anonymous": false
+    },
+    {
+        "type": "event",
+        "name": "FiatFeeAfterDiscount",
+        "inputs": [
+            {
+                "name": "initialFiatFee",
+                "type": "uint256",
+                "indexed": false,
+                "internalType": "uint256"
+            },
+            {
+                "name": "fiatFeeAfterDiscount",
+                "type": "uint256",
+                "indexed": false,
+                "internalType": "uint256"
+            },
+            {
+                "name": "maxProductDiscount",
+                "type": "uint256",
+                "indexed": false,
+                "internalType": "uint256"
+            }
+        ],
+        "anonymous": false
+    },
+    {
+        "type": "event",
+        "name": "Initialized",
+        "inputs": [
+            {
+                "name": "version",
+                "type": "uint64",
+                "indexed": false,
+                "internalType": "uint64"
+            }
+        ],
+        "anonymous": false
+    },
+    {
+        "type": "event",
+        "name": "NoActionFeeSet",
+        "inputs": [
+            {
+                "name": "actionId",
+                "type": "bytes32",
+                "indexed": false,
+                "internalType": "bytes32"
+            }
+        ],
+        "anonymous": false
+    },
+    {
+        "type": "event",
+        "name": "NoAvailableBalance",
+        "inputs": [
+            {
+                "name": "userAddr",
+                "type": "address",
+                "indexed": false,
+                "internalType": "address"
+            },
+            {
+                "name": "tokenAddr",
+                "type": "address",
+                "indexed": false,
+                "internalType": "address"
+            }
+        ],
+        "anonymous": false
+    },
+    {
+        "type": "event",
+        "name": "NoRequestFee",
+        "inputs": [
+            {
+                "name": "actionId",
+                "type": "bytes32",
+                "indexed": false,
+                "internalType": "bytes32"
+            },
+            {
+                "name": "requestId",
+                "type": "bytes32",
+                "indexed": false,
+                "internalType": "bytes32"
+            }
+        ],
+        "anonymous": false
+    },
+    {
+        "type": "event",
+        "name": "OwnershipTransferred",
+        "inputs": [
+            {
+                "name": "previousOwner",
+                "type": "address",
+                "indexed": true,
+                "internalType": "address"
+            },
+            {
+                "name": "newOwner",
+                "type": "address",
+                "indexed": true,
+                "internalType": "address"
+            }
+        ],
+        "anonymous": false
+    },
+    {
+        "type": "event",
+        "name": "ProductAllowed",
+        "inputs": [
+            {
+                "name": "productAddr",
+                "type": "address",
+                "indexed": false,
+                "internalType": "address"
+            },
+            {
+                "name": "actionId",
+                "type": "bytes32",
+                "indexed": false,
+                "internalType": "bytes32"
+            },
+            {
+                "name": "feeTokenAddr",
+                "type": "address",
+                "indexed": false,
+                "internalType": "address"
+            }
+        ],
+        "anonymous": false
+    },
+    {
+        "type": "event",
+        "name": "SupportedFeeTokenAdded",
+        "inputs": [
+            {
+                "name": "feeTokenAddr",
+                "type": "address",
+                "indexed": false,
+                "internalType": "address"
+            },
+            {
+                "name": "tokenType",
+                "type": "uint8",
+                "indexed": false,
+                "internalType": "enum IFeeManager.FeeTokenType"
+            },
+            {
+                "name": "priceFeedAddr",
+                "type": "address",
+                "indexed": false,
+                "internalType": "address"
+            }
+        ],
+        "anonymous": false
+    },
+    {
+        "type": "event",
+        "name": "SupportedFeeTokenUpdated",
+        "inputs": [
+            {
+                "name": "feeTokenAddr",
+                "type": "address",
+                "indexed": false,
+                "internalType": "address"
+            },
+            {
+                "name": "tokenType",
+                "type": "uint8",
+                "indexed": false,
+                "internalType": "enum IFeeManager.FeeTokenType"
+            },
+            {
+                "name": "priceFeedAddr",
+                "type": "address",
+                "indexed": false,
+                "internalType": "address"
+            },
+            {
+                "name": "priceFeedDecimals",
+                "type": "uint8",
+                "indexed": false,
+                "internalType": "uint8"
+            }
+        ],
+        "anonymous": false
+    },
+    {
+        "type": "event",
+        "name": "UserTokenAccountCreated",
+        "inputs": [
+            {
+                "name": "userAddr",
+                "type": "address",
+                "indexed": false,
+                "internalType": "address"
+            },
+            {
+                "name": "tokenAddr",
+                "type": "address",
+                "indexed": false,
+                "internalType": "address"
+            },
+            {
+                "name": "userTokenAccountId",
+                "type": "bytes32",
+                "indexed": false,
+                "internalType": "bytes32"
+            },
+            {
+                "name": "tokenType",
+                "type": "uint8",
+                "indexed": false,
+                "internalType": "enum IFeeManager.FeeTokenType"
+            }
+        ],
+        "anonymous": false
+    },
+    {
+        "type": "event",
+        "name": "UserTokenAccountRefunded",
+        "inputs": [
+            {
+                "name": "userAddr",
+                "type": "address",
+                "indexed": false,
+                "internalType": "address"
+            },
+            {
+                "name": "tokenAddr",
+                "type": "address",
+                "indexed": false,
+                "internalType": "address"
+            },
+            {
+                "name": "amount",
+                "type": "uint256",
+                "indexed": false,
+                "internalType": "uint256"
+            }
+        ],
+        "anonymous": false
+    },
+    {
+        "type": "event",
+        "name": "UserTokenAccountToppedUp",
+        "inputs": [
+            {
+                "name": "userAddr",
+                "type": "address",
+                "indexed": false,
+                "internalType": "address"
+            },
+            {
+                "name": "tokenAddr",
+                "type": "address",
+                "indexed": false,
+                "internalType": "address"
+            },
+            {
+                "name": "amount",
+                "type": "uint256",
+                "indexed": false,
+                "internalType": "uint256"
+            }
+        ],
+        "anonymous": false
+    },
+    {
+        "type": "event",
+        "name": "UserTokenAccountWithdrawn",
+        "inputs": [
+            {
+                "name": "userAddr",
+                "type": "address",
+                "indexed": false,
+                "internalType": "address"
+            },
+            {
+                "name": "tokenAddr",
+                "type": "address",
+                "indexed": false,
+                "internalType": "address"
+            },
+            {
+                "name": "amount",
+                "type": "uint256",
+                "indexed": false,
+                "internalType": "uint256"
+            }
+        ],
+        "anonymous": false
+    },
+    {
+        "type": "error",
+        "name": "ActionNotFound",
+        "inputs": [
+            {
+                "name": "actionId",
+                "type": "bytes32",
+                "internalType": "bytes32"
+            }
+        ]
+    },
+    {
+        "type": "error",
+        "name": "InsufficientBalance",
+        "inputs": [
+            {
+                "name": "userAddr",
+                "type": "address",
+                "internalType": "address"
+            },
+            {
+                "name": "tokenAddr",
+                "type": "address",
+                "internalType": "address"
+            },
+            {
+                "name": "expAmount",
+                "type": "uint256",
+                "internalType": "uint256"
+            },
+            {
+                "name": "balance",
+                "type": "uint256",
+                "internalType": "uint256"
+            }
+        ]
+    },
+    {
+        "type": "error",
+        "name": "InvalidDiscountPercentage",
+        "inputs": [
+            {
+                "name": "discount",
+                "type": "uint16",
+                "internalType": "uint16"
+            }
+        ]
+    },
+    {
+        "type": "error",
+        "name": "InvalidFeeToken",
+        "inputs": [
+            {
+                "name": "feeTokenAddr",
+                "type": "address",
+                "internalType": "address"
+            },
+            {
+                "name": "tokenType",
+                "type": "uint8",
+                "internalType": "enum IFeeManager.FeeTokenType"
+            },
+            {
+                "name": "priceFeedAddr",
+                "type": "address",
+                "internalType": "address"
+            },
+            {
+                "name": "decimals",
+                "type": "uint8",
+                "internalType": "uint8"
+            }
+        ]
+    },
+    {
+        "type": "error",
+        "name": "InvalidFeeTokenForProduct",
+        "inputs": [
+            {
+                "name": "productAddr",
+                "type": "address",
+                "internalType": "address"
+            },
+            {
+                "name": "actionId",
+                "type": "bytes32",
+                "internalType": "bytes32"
+            },
+            {
+                "name": "userAddr",
+                "type": "address",
+                "internalType": "address"
+            },
+            {
+                "name": "feeTokenAddr",
+                "type": "address",
+                "internalType": "address"
+            }
+        ]
+    },
+    {
+        "type": "error",
+        "name": "InvalidInitialization",
+        "inputs": []
+    },
+    {
+        "type": "error",
+        "name": "NegativePriceFeed",
+        "inputs": [
+            {
+                "name": "feeTokenAddr",
+                "type": "address",
+                "internalType": "address"
+            },
+            {
+                "name": "priceFeedAddr",
+                "type": "address",
+                "internalType": "address"
+            },
+            {
+                "name": "priceFeedValue",
+                "type": "int256",
+                "internalType": "int256"
+            }
+        ]
+    },
+    {
+        "type": "error",
+        "name": "NoUserActionFeeSet",
+        "inputs": [
+            {
+                "name": "userAddr",
+                "type": "address",
+                "internalType": "address"
+            },
+            {
+                "name": "actionId",
+                "type": "bytes32",
+                "internalType": "bytes32"
+            }
+        ]
+    },
+    {
+        "type": "error",
+        "name": "NotInitializing",
+        "inputs": []
+    },
+    {
+        "type": "error",
+        "name": "OnlyLinkToken",
+        "inputs": []
+    },
+    {
+        "type": "error",
+        "name": "OwnableInvalidOwner",
+        "inputs": [
+            {
+                "name": "owner",
+                "type": "address",
+                "internalType": "address"
+            }
+        ]
+    },
+    {
+        "type": "error",
+        "name": "OwnableUnauthorizedAccount",
+        "inputs": [
+            {
+                "name": "account",
+                "type": "address",
+                "internalType": "address"
+            }
+        ]
+    },
+    {
+        "type": "error",
+        "name": "PriceFeedStale",
+        "inputs": [
+            {
+                "name": "priceFeedAddr",
+                "type": "address",
+                "internalType": "address"
+            },
+            {
+                "name": "timestamp",
+                "type": "uint256",
+                "internalType": "uint256"
+            }
+        ]
+    },
+    {
+        "type": "error",
+        "name": "ProductNotAllowed",
+        "inputs": [
+            {
+                "name": "productAddr",
+                "type": "address",
+                "internalType": "address"
+            },
+            {
+                "name": "actionId",
+                "type": "bytes32",
+                "internalType": "bytes32"
+            },
+            {
+                "name": "userAddr",
+                "type": "address",
+                "internalType": "address"
+            },
+            {
+                "name": "feeTokenAddr",
+                "type": "address",
+                "internalType": "address"
+            }
+        ]
+    },
+    {
+        "type": "error",
+        "name": "RequestIdAlreadyInUse",
+        "inputs": [
+            {
+                "name": "actionId",
+                "type": "bytes32",
+                "internalType": "bytes32"
+            },
+            {
+                "name": "productRequestId",
+                "type": "bytes32",
+                "internalType": "bytes32"
+            },
+            {
+                "name": "userAddr",
+                "type": "address",
+                "internalType": "address"
+            }
+        ]
+    },
+    {
+        "type": "error",
+        "name": "SafeERC20FailedOperation",
+        "inputs": [
+            {
+                "name": "token",
+                "type": "address",
+                "internalType": "address"
+            }
+        ]
+    },
+    {
+        "type": "error",
+        "name": "TokenExists",
+        "inputs": [
+            {
+                "name": "feeTokenAddr",
+                "type": "address",
+                "internalType": "address"
+            }
+        ]
+    },
+    {
+        "type": "error",
+        "name": "TokenNotSupported",
+        "inputs": []
+    },
+    {
+        "type": "error",
+        "name": "UserTokenAccountExists",
+        "inputs": []
+    },
+    {
+        "type": "error",
+        "name": "UserTokenAccountNotFound",
+        "inputs": [
+            {
+                "name": "userAddr",
+                "type": "address",
+                "internalType": "address"
+            },
+            {
+                "name": "tokenAddr",
+                "type": "address",
+                "internalType": "address"
+            },
+            {
+                "name": "userTokenAccountId",
+                "type": "bytes32",
+                "internalType": "bytes32"
+            }
+        ]
+    },
+    {
+        "type": "error",
+        "name": "WithdrawFailed",
+        "inputs": [
+            {
+                "name": "userAddr",
+                "type": "address",
+                "internalType": "address"
+            },
+            {
+                "name": "amount",
+                "type": "uint256",
+                "internalType": "uint256"
+            }
+        ]
+    }
+]

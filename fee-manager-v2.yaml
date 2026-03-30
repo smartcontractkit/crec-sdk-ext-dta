@@ -1,0 +1,35 @@
+# =============================================================================
+# crec-gen.yaml: FeeManager v2
+# =============================================================================
+# Generates SDK for the FeeManager contract as a sub-package under v2.
+# No custom watcher — uses the generic event-listener.
+#
+# Usage:
+#   crec-gen full-sdk --config fee-manager-v2.yaml --skip watcher --skip schemas --skip values
+
+module: "github.com/smartcontractkit/crec-sdk-ext-dta/v2/fee_manager"
+
+output:
+  events: "./v2/fee_manager/events"
+  operations: "./v2/fee_manager/operations"
+  decode: "./v2/fee_manager"
+
+contracts:
+  - name: FeeManager
+    abi: ./abi/v2/FeeManagerU.abi.json
+    skip_methods:
+      - initialize
+      - onTokenTransfer
+      - owner
+      - renounceOwnership
+      - transferOwnership
+
+type_overrides:
+  addSupportedFeeToken_tokenType: FeeTokenType
+
+enum_mappings:
+  "enum IFeeManager.FeeTokenType": FeeTokenType
+
+skip_events:
+  - Initialized
+  - OwnershipTransferred

@@ -22,7 +22,7 @@ eventNames: []
 
 # CREC service configuration
 courierUrl: "https://crec.chainlink.com"
-service: "dta-v2"
+service: "dta.v2"
 watcherID: "00000000-0000-0000-0000-000000000000"
 
 # Contracts (all contracts the handler interacts with)

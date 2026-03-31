@@ -127,6 +127,8 @@ type DistributorRequest struct {
 	Amount *big.Int
 	// FundTokenId identifies the fund token.
 	FundTokenId [32]byte
+	// ReferenceID identifies the external reference associated with the request.
+	ReferenceID [32]byte
 	// FundAdminAddr is the address of the fund administrator.
 	FundAdminAddr common.Address
 	// DistributorAddr is the address of the distributor.

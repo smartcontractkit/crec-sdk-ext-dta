@@ -42,6 +42,32 @@ func (e *Extension) prepareDTARequestSettlementOp(method string, args ...interfa
 	return e.prepareOperation(DTARequestSettlementABI(), e.dtaRequestSettlementAddress, method, args...)
 }
 
+func cloneBigInt(v *big.Int) *big.Int {
+	if v == nil {
+		return big.NewInt(0)
+	}
+
+	return new(big.Int).Set(v)
+}
+
+func (e *Extension) operationDeadline() *big.Int {
+	return cloneBigInt(e.defaultDeadline)
+}
+
+func (e *Extension) newOperationWithTransactions(
+	txs ...transactTypes.Transaction,
+) (*transactTypes.Operation, error) {
+	opID, err := generateOperationID()
+	if err != nil {
+		return nil, fmt.Errorf("generate operation ID: %w", err)
+	}
+
+	copiedTxs := make([]transactTypes.Transaction, len(txs))
+	copy(copiedTxs, txs)
+
+	return &transactTypes.Operation{ID: opID, Deadline: e.operationDeadline(), Account: e.accountAddress, Transactions: copiedTxs}, nil
+}
+
 func (e *Extension) prepareOperation(
 	contractABI *abi.ABI,
 	target common.Address,
@@ -54,23 +80,17 @@ func (e *Extension) prepareOperation(
 		return nil, fmt.Errorf("pack %s: %w", method, err)
 	}
 
-	opID, err := generateOperationID()
+	op, err := e.newOperationWithTransactions(transactTypes.Transaction{
+		To:    target,
+		Value: big.NewInt(0),
+		Data:  calldata,
+	})
 	if err != nil {
-		e.logger.Error("failed to generate operation ID", "error", err)
-		return nil, fmt.Errorf("generate operation ID: %w", err)
+		e.logger.Error("failed to construct operation", "method", method, "error", err)
+		return nil, fmt.Errorf("new operation: %w", err)
 	}
 
-	return &transactTypes.Operation{
-		ID:      opID,
-		Account: e.accountAddress,
-		Transactions: []transactTypes.Transaction{
-			{
-				To:    target,
-				Value: big.NewInt(0),
-				Data:  calldata,
-			},
-		},
-	}, nil
+	return op, nil
 }
 
 func generateOperationID() (*big.Int, error) {

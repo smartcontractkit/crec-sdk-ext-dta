@@ -22,6 +22,21 @@ tasks:
     cmds:
       - go test ./...
 
+  certify:
+    desc: "Run DTA certification test against a deployed CREC environment"
+    cmds:
+      - RUN_CREC_CERTIFICATION=true go test ./certify -run TestCertify -count=1
+
+  certify:v1:
+    desc: "Run DTA v1 certification test (deploy the v1-compatible management mock first)"
+    cmds:
+      - RUN_CREC_CERTIFICATION=true DTA_SERVICE=dta.v1 go test ./certify -run TestCertify -count=1
+
+  certify:v2:
+    desc: "Run DTA v2 certification test (deploy the v2-compatible management mock first)"
+    cmds:
+      - RUN_CREC_CERTIFICATION=true DTA_SERVICE=dta.v2 go test ./certify -run TestCertify -count=1
+
   tools:
     desc: "Install required build tools"
     cmds:

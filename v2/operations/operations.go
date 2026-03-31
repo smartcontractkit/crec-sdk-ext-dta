@@ -39,24 +39,20 @@ func (e *Extension) PrepareRequestSubscriptionWithTokenApprovalOperation(
 		return nil, fmt.Errorf("pack requestSubscription: %w", err)
 	}
 
-	opID, err := generateOperationID()
+	op, err := e.newOperationWithTransactions(
+		*approveTransaction,
+		transactTypes.Transaction{
+			To:    e.dtaRequestManagementAddress,
+			Value: big.NewInt(0),
+			Data:  calldata,
+		},
+	)
 	if err != nil {
-		e.logger.Error("failed to generate operation ID", "error", err)
-		return nil, fmt.Errorf("generate operation ID: %w", err)
+		e.logger.Error("failed to construct requestSubscription operation", "error", err)
+		return nil, fmt.Errorf("new operation: %w", err)
 	}
 
-	return &transactTypes.Operation{
-		ID:      opID,
-		Account: e.accountAddress,
-		Transactions: []transactTypes.Transaction{
-			*approveTransaction,
-			{
-				To:    e.dtaRequestManagementAddress,
-				Value: big.NewInt(0),
-				Data:  calldata,
-			},
-		},
-	}, nil
+	return op, nil
 }
 
 // PrepareRegisterFundTokenOperation prepares a register fund token operation.
@@ -71,23 +67,17 @@ func (e *Extension) PrepareRegisterFundTokenOperation(
 		return nil, fmt.Errorf("pack registerFundToken: %w", err)
 	}
 
-	opID, err := generateOperationID()
+	op, err := e.newOperationWithTransactions(transactTypes.Transaction{
+		To:    e.dtaRequestManagementAddress,
+		Value: big.NewInt(0),
+		Data:  calldata,
+	})
 	if err != nil {
-		e.logger.Error("failed to generate operation ID", "error", err)
-		return nil, fmt.Errorf("generate operation ID: %w", err)
+		e.logger.Error("failed to construct registerFundToken operation", "error", err)
+		return nil, fmt.Errorf("new operation: %w", err)
 	}
 
-	return &transactTypes.Operation{
-		ID:      opID,
-		Account: e.accountAddress,
-		Transactions: []transactTypes.Transaction{
-			{
-				To:    e.dtaRequestManagementAddress,
-				Value: big.NewInt(0),
-				Data:  calldata,
-			},
-		},
-	}, nil
+	return op, nil
 }
 
 // ============================================================================

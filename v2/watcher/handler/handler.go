@@ -81,7 +81,9 @@ func OnLog(cfg *workflows.Config, rt cre.Runtime, payload *evm.Log) (string, err
 		return "", err
 	}
 	var referenceDataMap map[string]interface{}
-	err = json.Unmarshal(typeAndValueBytes, &referenceDataMap)
+	if err := json.Unmarshal(typeAndValueBytes, &referenceDataMap); err != nil {
+		return "", err
+	}
 
 	abiJSON, err := workflows.GetContractABI(cfg, cfg.DetectEventTriggerConfig.ContractName)
 	if err != nil {

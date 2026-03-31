@@ -2,8 +2,9 @@
 pragma solidity ^0.8.20;
 
 /// @title MockDTARequestSettlement
-/// @notice Minimal mock for testing the DTA extension watcher.
-///         Emits DTASettlementOpened and provides a stub completeRequestProcessing.
+/// @notice Shared settlement mock for testing the DTA v1/v2 extension watchers
+///         and deployed certification flows.
+/// @dev    Emits DTASettlementOpened and provides a stub completeRequestProcessing.
 contract MockDTARequestSettlement {
 
     // --- Enums (match IDTAMessage) ---
@@ -30,6 +31,8 @@ contract MockDTARequestSettlement {
 
     bytes32 public constant MOCK_FUND_TOKEN_ID = keccak256("mock-fund-token");
     address public constant MOCK_FUND_ADMIN = address(0xAAAA);
+    address public constant MOCK_DISTRIBUTOR = address(0xD15C);
+    address public constant MOCK_DISTRIBUTOR_WALLET = address(0xF111);
 
     constructor(address _managementAddr) {
         owner = msg.sender;
@@ -50,11 +53,11 @@ contract MockDTARequestSettlement {
             MOCK_FUND_ADMIN,                        // fundAdminAddr (indexed)
             MOCK_FUND_TOKEN_ID,                     // fundTokenId (indexed)
             uint8(DistributorRequestType.Subscription), // requestType (indexed)
-            msg.sender,                             // distributorAddr
+            MOCK_DISTRIBUTOR,                       // distributorAddr
             16015286601757825753,                    // dtaChainSelector (Sepolia)
             managementAddr,                         // dtaAddr → points to management mock
             requestId,                              // requestId
-            msg.sender,                             // distributorWalletAddr
+            MOCK_DISTRIBUTOR_WALLET,                // distributorWalletAddr
             1000e18,                                // shares
             5000e6,                                 // amount
             uint8(Currency.USD)                     // currency

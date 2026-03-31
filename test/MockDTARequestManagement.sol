@@ -2,9 +2,10 @@
 pragma solidity ^0.8.20;
 
 /// @title MockDTARequestManagement
-/// @notice Minimal mock for testing the DTA extension watcher.
-///         Emits DistributorRequestProcessing and provides hardcoded view functions
-///         for getDistributorRequest and getFundToken.
+/// @notice Minimal v1-compatible mock for testing the DTA v1 extension watcher
+///         and deployed v1 certification flow.
+/// @dev    This contract intentionally uses the v1 DistributorRequest tuple shape
+///         without `referenceID`. Use MockDTARequestManagementV2 for dta.v2.
 contract MockDTARequestManagement {
 
     // --- Enums (match IDTAMessage) ---
@@ -56,9 +57,10 @@ contract MockDTARequestManagement {
         uint256 amount
     );
 
-    // Fixed fund token ID and fund admin for deterministic mock data
+    // Fixed fund token ID, fund admin and distributor for deterministic mock data
     bytes32 public constant MOCK_FUND_TOKEN_ID = keccak256("mock-fund-token");
     address public constant MOCK_FUND_ADMIN = address(0xAAAA);
+    address public constant MOCK_DISTRIBUTOR = address(0xD15C);
 
     address public owner;
     address public settlementAddr;
@@ -79,7 +81,7 @@ contract MockDTARequestManagement {
         emit DistributorRequestProcessing(
             MOCK_FUND_ADMIN,        // fundAdminAddr (indexed)
             MOCK_FUND_TOKEN_ID,     // fundTokenId (indexed)
-            msg.sender,             // distributorAddr (indexed)
+            MOCK_DISTRIBUTOR,       // distributorAddr (indexed)
             requestId,              // requestId
             1000e18,                // shares
             5000e6                  // amount (e.g. 5000 USDC)
@@ -93,7 +95,7 @@ contract MockDTARequestManagement {
             amount: 5000e6,
             fundTokenId: MOCK_FUND_TOKEN_ID,
             fundAdminAddr: MOCK_FUND_ADMIN,
-            distributorAddr: msg.sender,
+            distributorAddr: MOCK_DISTRIBUTOR,
             createdAt: uint40(block.timestamp),
             requestType: DistributorRequestType.Subscription,
             status: RequestStatus.Processing

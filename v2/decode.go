@@ -5,9 +5,9 @@ import (
 	"encoding/json"
 	"fmt"
 
-	workflows "github.com/smartcontractkit/crec-workflow-utils"
 	apiClient "github.com/smartcontractkit/crec-api-go/client"
 	"github.com/smartcontractkit/crec-sdk-ext-dta/v2/events"
+	workflows "github.com/smartcontractkit/crec-workflow-utils"
 )
 
 // Solidity method signatures used to match on-chain reference data.
@@ -33,7 +33,7 @@ type DecodedEvent struct {
 
 // EventName returns the parsed event name from the payload.
 func (e DecodedEvent) EventName() events.EventName {
-	verifiableEvent, err := workflows.DecodeVerifiableEvent(e.WatcherEventPayload.VerifiableEvent)
+	verifiableEvent, err := workflows.DecodeVerifiableEvent(e.VerifiableEvent)
 	if err != nil || verifiableEvent == nil {
 		return events.EventUnknown
 	}

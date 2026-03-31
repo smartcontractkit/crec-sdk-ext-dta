@@ -347,6 +347,36 @@ func TestDecodeFromEvent_ReferenceDataLenient(t *testing.T) {
 	}
 }
 
+func TestDecodeFromEvent_DistributorRequestReferenceIDRoundTrip(t *testing.T) {
+	referenceID := [32]byte{9}
+	data := map[string]any{
+		"distributor_addr": "0x00000000000000000000000000000000000000aa",
+	}
+
+	payload := buildWatcherEventPayload(
+		events.EventDistributorRegistered.String(),
+		data,
+		withFundTokenData(testFundTokenData()),
+		withDistributorRequest(events.DistributorRequest{
+			Shares:          big.NewInt(100),
+			Amount:          big.NewInt(200),
+			FundTokenId:     [32]byte{1},
+			ReferenceID:     referenceID,
+			FundAdminAddr:   common.HexToAddress("0xaa"),
+			DistributorAddr: common.HexToAddress("0xbb"),
+			CreatedAt:       big.NewInt(12345),
+			RequestType:     1,
+			Status:          2,
+		}),
+	)
+	event := buildEvent(t, payload)
+
+	result, err := v2.DecodeFromEvent(context.Background(), event)
+	require.NoError(t, err)
+	require.NotNil(t, result.DistributorRequest)
+	require.Equal(t, referenceID, result.DistributorRequest.ReferenceID)
+}
+
 func TestDecodeFromEvent_UnsupportedEvent(t *testing.T) {
 	data := map[string]any{"some_field": "some_value"}
 	payload := buildWatcherEventPayload("SomeUnknownEvent", data)

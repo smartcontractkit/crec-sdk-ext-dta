@@ -5,6 +5,7 @@ package operations
 import (
 	"fmt"
 	"log/slog"
+	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
 )
@@ -17,6 +18,11 @@ type Options struct {
 	// AccountAddress is the address of the account performing operations.
 	AccountAddress string
 
+	// Deadline is the default deadline applied to every prepared operation.
+	// If nil, the SDK emits deadline 0 so the field is always present in the
+	// signed payload while remaining backwards-compatible with no-expiry flows.
+	Deadline *big.Int
+
 	// DTARequestManagementAddress is the address of the DTARequestManagement contract.
 	DTARequestManagementAddress string
 
@@ -28,6 +34,10 @@ type Options struct {
 func (o *Options) validate() error {
 	if !common.IsHexAddress(o.AccountAddress) {
 		return fmt.Errorf("invalid AccountAddress: %q", o.AccountAddress)
+	}
+
+	if o.Deadline != nil && o.Deadline.Sign() < 0 {
+		return fmt.Errorf("invalid Deadline: must be >= 0")
 	}
 
 	if !common.IsHexAddress(o.DTARequestManagementAddress) {
@@ -45,6 +55,7 @@ func (o *Options) validate() error {
 type Extension struct {
 	logger                      *slog.Logger
 	accountAddress              common.Address
+	defaultDeadline             *big.Int
 	dtaRequestManagementAddress common.Address
 	dtaRequestSettlementAddress common.Address
 }
@@ -69,6 +80,7 @@ func New(opts *Options) (*Extension, error) {
 	return &Extension{
 		logger:                      logger,
 		accountAddress:              common.HexToAddress(opts.AccountAddress),
+		defaultDeadline:             cloneBigInt(opts.Deadline),
 		dtaRequestManagementAddress: common.HexToAddress(opts.DTARequestManagementAddress),
 		dtaRequestSettlementAddress: common.HexToAddress(opts.DTARequestSettlementAddress),
 	}, nil

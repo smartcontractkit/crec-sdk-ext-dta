@@ -269,4 +269,4 @@ task mock:logs
 
 ## License
 
-[MIT](LICENSE.md)
+[BUSL](LICENSE)

@@ -63,10 +63,9 @@ jobs:
         run: |
           set -euo pipefail
           failed=0
+          # Only binary.wasm.br.b64 is tracked; binary.wasm is gitignored (embed uses .br.b64)
           for f in \
-            v1/watcher/bundle/binary.wasm \
             v1/watcher/bundle/binary.wasm.br.b64 \
-            v2/watcher/bundle/binary.wasm \
             v2/watcher/bundle/binary.wasm.br.b64
           do
             echo ""
@@ -87,8 +86,7 @@ jobs:
               echo "❌ $f does not match the committed version in git"
               echo "   Rebuild and commit:"
               echo "     task watcher:build:all"
-              echo "     git add v1/watcher/bundle/binary.wasm v1/watcher/bundle/binary.wasm.br.b64 \\"
-              echo "           v2/watcher/bundle/binary.wasm v2/watcher/bundle/binary.wasm.br.b64"
+              echo "     git add v1/watcher/bundle/binary.wasm.br.b64 v2/watcher/bundle/binary.wasm.br.b64"
               echo "   If hashes still differ, align Go $(grep '^go ' go.mod | awk '{print $2}') and brotli 1.2.0 with CI."
               failed=1
             else

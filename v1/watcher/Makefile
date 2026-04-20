@@ -1,4 +1,4 @@
-# Post-WASM brotli+base64: same recipe as crec-courier-service/workflows/operation-writer/Makefile
+# Build wasip1 WASM then pack with brotli + base64 (matching courier CI recipe)
 .PHONY: build
 
 build:

@@ -57,7 +57,7 @@ jobs:
           fi
           go clean -cache
           go mod download
-          task watcher:build:all
+          task watcher:build
 
       - name: Verify committed WASM matches build
         run: |
@@ -85,7 +85,7 @@ jobs:
             if [ "$built_hash" != "$committed_hash" ]; then
               echo "❌ $f does not match the committed version in git"
               echo "   Rebuild and commit:"
-              echo "     task watcher:build:all"
+              echo "     task watcher:build"
               echo "     git add v1/watcher/bundle/binary.wasm.br.b64 v2/watcher/bundle/binary.wasm.br.b64"
               echo "   If hashes still differ, align Go $(grep '^go ' go.mod | awk '{print $2}') and brotli 1.2.0 with CI."
               failed=1

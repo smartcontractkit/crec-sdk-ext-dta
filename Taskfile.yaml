@@ -95,15 +95,14 @@ tasks:
   # ---------------- Watcher Bundle Tasks ----------------------
   # -------------------------------------------------------------
 
-  watcher:build:
-    desc: "Build watcher WASM binary (BYOW pattern)"
-
+  watcher:build:one:
+    desc: "Build one DTA watcher (set VERSION=v1 or v2)"
     vars:
       VERSION: '{{ .VERSION | default "v1" }}'
     cmds:
-      - echo "🔧 Building watcher WASM binary..."
+      - echo "🔧 Building {{ .VERSION }} watcher WASM..."
       - cd {{ .VERSION }}/watcher && make build
-      - echo "✅ Watcher bundle built"
+      - echo "✅ {{ .VERSION }} watcher bundle built"
     sources:
       - "{{ .VERSION }}/watcher/**/*.go"
       - "{{ .VERSION }}/watcher/handler/**/*.go"
@@ -113,6 +112,30 @@ tasks:
       - "{{ .VERSION }}/watcher/wasm/workflow.wasm"
       - "{{ .VERSION }}/watcher/bundle/binary.wasm"
       - "{{ .VERSION }}/watcher/bundle/binary.wasm.br.b64"
+
+  watcher:build:
+    desc: "Build all DTA watcher versions (v1, v2)"
+    cmds:
+      - task: watcher:build:one
+        vars:
+          VERSION: v1
+      - task: watcher:build:one
+        vars:
+          VERSION: v2
+
+  watcher:build:v1:
+    desc: "Build v1 DTA watcher WASM only"
+    cmds:
+      - task: watcher:build:one
+        vars:
+          VERSION: v1
+
+  watcher:build:v2:
+    desc: "Build v2 DTA watcher WASM only"
+    cmds:
+      - task: watcher:build:one
+        vars:
+          VERSION: v2
 
   watcher:check:sizes:
     desc: "Check WASM binary and config sizes against CRE limits"
@@ -172,16 +195,6 @@ tasks:
 
         echo "✅ All sizes within CRE limits"
 
-  watcher:build:all:
-    desc: "Build watcher WASM for all supported versions (v1, v2)"
-    cmds:
-      - task: watcher:build
-        vars:
-          VERSION: v1
-      - task: watcher:build
-        vars:
-          VERSION: v2
-
   watcher:check:sizes:all:
     desc: "Check WASM/config sizes for all supported versions (v1, v2)"
     cmds:
@@ -192,51 +205,40 @@ tasks:
         vars:
           VERSION: v2
 
-  watcher:verify:committed:
-    desc: "SHA256 of bundle/binary.wasm.br.b64 vs git HEAD (embed artifact; run after watcher:build:all)"
+  watcher:check:artifacts:local:
+    desc: "Hash bundle binary.wasm.br.b64 on disk, run task watcher:build, fail if any .br.b64 content changed (no git)"
     silent: false
     cmds:
       - |
-        set -euo pipefail
-        if ! git rev-parse --git-dir >/dev/null 2>&1; then
-          echo "❌ Not a git repository"
-          exit 1
-        fi
+        set -eu
+        F1=v1/watcher/bundle/binary.wasm.br.b64
+        F2=v2/watcher/bundle/binary.wasm.br.b64
+        B1=$(if [ -f "$F1" ]; then openssl dgst -sha256 "$F1" | awk '{print $2}'; else echo __absent__; fi)
+        B2=$(if [ -f "$F2" ]; then openssl dgst -sha256 "$F2" | awk '{print $2}'; else echo __absent__; fi)
+        task watcher:build
+        A1=$(openssl dgst -sha256 "$F1" | awk '{print $2}')
+        A2=$(openssl dgst -sha256 "$F2" | awk '{print $2}')
         failed=0
-        for f in v1/watcher/bundle/binary.wasm.br.b64 v2/watcher/bundle/binary.wasm.br.b64; do
-          echo ""
-          echo "Checking $f..."
-          if [ ! -f "$f" ]; then
-            echo "❌ Missing: $f — run: task watcher:build:all"
-            failed=1
-            continue
-          fi
-          if ! git ls-files --error-unmatch "$f" >/dev/null 2>&1; then
-            echo "❌ $f not tracked by git"
-            failed=1
-            continue
-          fi
-          built=$(sha256sum "$f" | awk '{print $1}')
-          committed=$(git show HEAD:"$f" | sha256sum | awk '{print $1}')
-          if [ "$built" != "$committed" ]; then
-            echo "❌ Hash mismatch vs HEAD"
-            echo "   built:     $built"
-            echo "   committed: $committed"
-            echo "   Fix: task watcher:build:all && git add v1/watcher/bundle/binary.wasm.br.b64 v2/watcher/bundle/binary.wasm.br.b64"
-            failed=1
-          else
-            echo "✅ $f OK"
-          fi
-        done
-        test "$failed" -eq 0
+        if [ "$B1" = "$A1" ]; then
+          echo "✅ $F1 unchanged (reproducible vs on-disk)"
+        else
+          echo "❌ $F1 changed after rebuild — run git add and commit, or match Go + brotli 1.2.0 to CI if unintended."
+          failed=1
+        fi
+        if [ "$B2" = "$A2" ]; then
+          echo "✅ $F2 unchanged (reproducible vs on-disk)"
+        else
+          echo "❌ $F2 changed after rebuild — run git add and commit, or match Go + brotli 1.2.0 to CI if unintended."
+          failed=1
+        fi
+        exit $failed
 
   pr-checks:
-    desc: "Pre-PR: go test + WASM build + verify .br.b64 vs HEAD + size limits (same as CI watcher-artifacts)"
+    desc: "Pre-PR: go test, artifact drift check (build+compare on disk), CRE size limits"
     silent: false
     cmds:
       - go test ./...
-      - task: watcher:build:all
-      - task: watcher:verify:committed
+      - task: watcher:check:artifacts:local
       - task: watcher:check:sizes:all
 
   # -------------------------------------------------------------

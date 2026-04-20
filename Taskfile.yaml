@@ -172,6 +172,26 @@ tasks:
 
         echo "✅ All sizes within CRE limits"
 
+  watcher:build:all:
+    desc: "Build watcher WASM for all supported versions (v1, v2)"
+    cmds:
+      - task: watcher:build
+        vars:
+          VERSION: v1
+      - task: watcher:build
+        vars:
+          VERSION: v2
+
+  watcher:check:sizes:all:
+    desc: "Check WASM/config sizes for all supported versions (v1, v2)"
+    cmds:
+      - task: watcher:check:sizes
+        vars:
+          VERSION: v1
+      - task: watcher:check:sizes
+        vars:
+          VERSION: v2
+
   # -------------------------------------------------------------
   # ---------------- Watcher Workflow Tasks ---------------------
   # -------------------------------------------------------------

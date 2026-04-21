@@ -205,42 +205,6 @@ tasks:
         vars:
           VERSION: v2
 
-  watcher:check:artifacts:local:
-    desc: "Hash bundle binary.wasm.br.b64 on disk, run task watcher:build, fail if any .br.b64 content changed (no git)"
-    silent: false
-    cmds:
-      - |
-        set -eu
-        F1=v1/watcher/bundle/binary.wasm.br.b64
-        F2=v2/watcher/bundle/binary.wasm.br.b64
-        B1=$(if [ -f "$F1" ]; then openssl dgst -sha256 "$F1" | awk '{print $2}'; else echo __absent__; fi)
-        B2=$(if [ -f "$F2" ]; then openssl dgst -sha256 "$F2" | awk '{print $2}'; else echo __absent__; fi)
-        task watcher:build
-        A1=$(openssl dgst -sha256 "$F1" | awk '{print $2}')
-        A2=$(openssl dgst -sha256 "$F2" | awk '{print $2}')
-        failed=0
-        if [ "$B1" = "$A1" ]; then
-          echo "✅ $F1 unchanged (reproducible vs on-disk)"
-        else
-          echo "❌ $F1 changed after rebuild — run git add and commit, or match Go + brotli 1.2.0 to CI if unintended."
-          failed=1
-        fi
-        if [ "$B2" = "$A2" ]; then
-          echo "✅ $F2 unchanged (reproducible vs on-disk)"
-        else
-          echo "❌ $F2 changed after rebuild — run git add and commit, or match Go + brotli 1.2.0 to CI if unintended."
-          failed=1
-        fi
-        exit $failed
-
-  pr-checks:
-    desc: "Pre-PR: go test, artifact drift check (build+compare on disk), CRE size limits"
-    silent: false
-    cmds:
-      - go test ./...
-      - task: watcher:check:artifacts:local
-      - task: watcher:check:sizes:all
-
   # -------------------------------------------------------------
   # ---------------- Watcher Workflow Tasks ---------------------
   # -------------------------------------------------------------

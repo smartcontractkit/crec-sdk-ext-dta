@@ -95,15 +95,14 @@ tasks:
   # ---------------- Watcher Bundle Tasks ----------------------
   # -------------------------------------------------------------
 
-  watcher:build:
-    desc: "Build watcher WASM binary (BYOW pattern)"
-
+  watcher:build:one:
+    desc: "Build one DTA watcher (set VERSION=v1 or v2)"
     vars:
       VERSION: '{{ .VERSION | default "v1" }}'
     cmds:
-      - echo "🔧 Building watcher WASM binary..."
+      - echo "🔧 Building {{ .VERSION }} watcher WASM..."
       - cd {{ .VERSION }}/watcher && make build
-      - echo "✅ Watcher bundle built"
+      - echo "✅ {{ .VERSION }} watcher bundle built"
     sources:
       - "{{ .VERSION }}/watcher/**/*.go"
       - "{{ .VERSION }}/watcher/handler/**/*.go"
@@ -113,6 +112,30 @@ tasks:
       - "{{ .VERSION }}/watcher/wasm/workflow.wasm"
       - "{{ .VERSION }}/watcher/bundle/binary.wasm"
       - "{{ .VERSION }}/watcher/bundle/binary.wasm.br.b64"
+
+  watcher:build:
+    desc: "Build all DTA watcher versions (v1, v2)"
+    cmds:
+      - task: watcher:build:one
+        vars:
+          VERSION: v1
+      - task: watcher:build:one
+        vars:
+          VERSION: v2
+
+  watcher:build:v1:
+    desc: "Build v1 DTA watcher WASM only"
+    cmds:
+      - task: watcher:build:one
+        vars:
+          VERSION: v1
+
+  watcher:build:v2:
+    desc: "Build v2 DTA watcher WASM only"
+    cmds:
+      - task: watcher:build:one
+        vars:
+          VERSION: v2
 
   watcher:check:sizes:
     desc: "Check WASM binary and config sizes against CRE limits"
@@ -171,6 +194,16 @@ tasks:
         fi
 
         echo "✅ All sizes within CRE limits"
+
+  watcher:check:sizes:all:
+    desc: "Check WASM/config sizes for all supported versions (v1, v2)"
+    cmds:
+      - task: watcher:check:sizes
+        vars:
+          VERSION: v1
+      - task: watcher:check:sizes
+        vars:
+          VERSION: v2
 
   # -------------------------------------------------------------
   # ---------------- Watcher Workflow Tasks ---------------------

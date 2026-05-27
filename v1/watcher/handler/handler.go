@@ -15,8 +15,9 @@ import (
 
 	"github.com/smartcontractkit/cre-sdk-go/capabilities/blockchain/evm"
 	"github.com/smartcontractkit/cre-sdk-go/cre"
-	workflows "github.com/smartcontractkit/crec-workflow-utils"
 	apiModels "github.com/smartcontractkit/crec-api-go/models"
+	workflows "github.com/smartcontractkit/crec-workflow-utils"
+
 	dtaevents "github.com/smartcontractkit/crec-sdk-ext-dta/v1/events"
 )
 
@@ -26,7 +27,7 @@ var (
 	DTARequestSettlement              string = "DTARequestSettlement"
 	DTASettlementOpenedEventSignature string = "DTASettlementOpened(address,bytes32,uint8,address,uint64,address,bytes32,address,uint256,uint256,uint8)"
 	DTASettlementClosedEventSignature string = "DTASettlementClosed(address,bytes32,uint8,address,uint64,address,bytes32,bool,bytes)"
-	WorkflowService                    string = "dta.v1"
+	WorkflowService                   string = "dta.v1"
 )
 
 type GetDistributorRequestInput struct {
@@ -46,9 +47,9 @@ type GetFundTokenInput struct {
 
 // OnLog processes EVM log events from DTA contracts.
 // It decodes event parameters, composes workflow metadata, and posts signed events.
-func OnLog(cfg *workflows.Config, rt cre.Runtime, payload *evm.Log) (string, error) {
+func OnLog(cfg *workflows.Config, rt cre.Runtime, payload *evm.Log, confidence apiModels.EVMEventConfidence) (string, error) {
 
-	event, err := workflows.BuildEVMEventFromLog(rt, cfg, payload)
+	event, err := workflows.BuildEVMEventFromLog(rt, cfg, payload, confidence)
 	if err != nil {
 		return "", err
 	}
@@ -616,7 +617,6 @@ func buildPaymentRequest(cfg *workflows.Config, event apiModels.EVMEvent, fundTo
 		Sender:          sender,
 		Receiver:        receiver,
 		Currency:        currencyCode,
-		ChainID:         event.ChainId,
 		Amount:          amount,
 		Expiration:      &expiration,
 		CustomCallback: &workflows.PaymentCallback{

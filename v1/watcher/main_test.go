@@ -10,6 +10,7 @@ import (
 
 	gethCommon "github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/smartcontractkit/crec-api-go/models"
 	"github.com/stretchr/testify/require"
 
 	"github.com/smartcontractkit/chainlink-protos/cre/go/values/pb"
@@ -20,6 +21,7 @@ import (
 	"github.com/smartcontractkit/cre-sdk-go/cre/testutils"
 
 	workflows "github.com/smartcontractkit/crec-workflow-utils"
+
 	wf "github.com/smartcontractkit/crec-sdk-ext-dta/v1/watcher/handler"
 )
 
@@ -29,10 +31,9 @@ func TestWatcherV1_DTA_SimpleFlow_Post(t *testing.T) {
 
 	cfg := &workflows.Config{
 		Network:       "evm",
-		ChainID:       "31337",
 		ChainSelector: "3379446385462418246",
 		Service:       &service,
-		CourierURL: "http://example.com",
+		CourierURL:    "http://example.com",
 		DetectEventTriggerConfig: workflows.DetectEventTriggerConfig{
 			ContractName:       "TransparentUpgradeableProxy",
 			ContractAddress:    "0x84eA74d481Ee0A5332c457a4d796187F6Ba67fEB",
@@ -76,7 +77,7 @@ func TestWatcherV1_DTA_SimpleFlow_Post(t *testing.T) {
 		Index:       0,
 	}
 
-	_, err = wf.OnLog(cfg, rt, log)
+	_, err = wf.OnLog(cfg, rt, log, models.Latest)
 	require.NoError(t, err)
 
 	var body map[string]any

@@ -10,6 +10,7 @@ import (
 
 	gethCommon "github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/smartcontractkit/crec-api-go/models"
 	"github.com/stretchr/testify/require"
 
 	"github.com/smartcontractkit/chainlink-protos/cre/go/values/pb"
@@ -20,6 +21,7 @@ import (
 	"github.com/smartcontractkit/cre-sdk-go/cre/testutils"
 
 	wfcommon "github.com/smartcontractkit/crec-workflow-utils"
+
 	wf "github.com/smartcontractkit/crec-sdk-ext-dta/v2/watcher/handler"
 )
 
@@ -30,7 +32,6 @@ func TestWatcher_OnLog(t *testing.T) {
 
 	cfg := &wfcommon.Config{
 		Network:       "evm",
-		ChainID:       "31337",
 		ChainSelector: "3379446385462418246",
 		Service:       ptr("dta.v2"),
 		WatcherID:     "watcher-test",
@@ -87,6 +88,6 @@ func TestWatcher_OnLog(t *testing.T) {
 		Index:       0,
 	}
 
-	_, err = wf.OnLog(cfg, rt, log)
+	_, err = wf.OnLog(cfg, rt, log, models.ConfidenceLevelLatest)
 	require.NoError(t, err)
 }

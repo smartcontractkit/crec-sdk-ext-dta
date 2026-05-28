@@ -15,8 +15,9 @@ import (
 
 	"github.com/smartcontractkit/cre-sdk-go/capabilities/blockchain/evm"
 	"github.com/smartcontractkit/cre-sdk-go/cre"
-	workflows "github.com/smartcontractkit/crec-workflow-utils"
 	apiModels "github.com/smartcontractkit/crec-api-go/models"
+	workflows "github.com/smartcontractkit/crec-workflow-utils"
+
 	dtaevents "github.com/smartcontractkit/crec-sdk-ext-dta/v2/events"
 )
 
@@ -44,9 +45,9 @@ type GetFundTokenInput struct {
 	FundTokenId        []byte
 }
 
-func OnLog(cfg *workflows.Config, rt cre.Runtime, payload *evm.Log) (string, error) {
+func OnLog(cfg *workflows.Config, rt cre.Runtime, payload *evm.Log, confidence apiModels.ConfidenceLevel) (string, error) {
 
-	event, err := workflows.BuildEVMEventFromLog(rt, cfg, payload)
+	event, err := workflows.BuildEVMEventFromLog(rt, cfg, payload, confidence)
 	if err != nil {
 		return "", err
 	}
@@ -610,7 +611,6 @@ func buildPaymentRequest(cfg *workflows.Config, event apiModels.EVMEvent, fundTo
 		Sender:          sender,
 		Receiver:        receiver,
 		Currency:        currencyCode,
-		ChainID:         event.ChainId,
 		Amount:          amount,
 		Expiration:      &expiration,
 		CustomCallback: &workflows.PaymentCallback{

@@ -45,7 +45,7 @@ type GetFundTokenInput struct {
 	FundTokenId        []byte
 }
 
-func OnLog(cfg *workflows.Config, rt cre.Runtime, payload *evm.Log, confidence apiModels.EVMEventConfidence) (string, error) {
+func OnLog(cfg *workflows.Config, rt cre.Runtime, payload *evm.Log, confidence apiModels.ConfidenceLevel) (string, error) {
 
 	event, err := workflows.BuildEVMEventFromLog(rt, cfg, payload, confidence)
 	if err != nil {

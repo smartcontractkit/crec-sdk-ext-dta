@@ -77,7 +77,7 @@ func TestWatcherV1_DTA_SimpleFlow_Post(t *testing.T) {
 		Index:       0,
 	}
 
-	_, err = wf.OnLog(cfg, rt, log, models.Latest)
+	_, err = wf.OnLog(cfg, rt, log, models.ConfidenceLevelLatest)
 	require.NoError(t, err)
 
 	var body map[string]any

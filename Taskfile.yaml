@@ -62,8 +62,7 @@ tasks:
     cmds:
       - echo "🔧 Generating Go bindings..."
       - mkdir -p v1/bindings/dtarm v1/bindings/dtars
-      - abigen --abi v1/watcher/bundle/DTARequestManagementU.abi.json --pkg dtarm --out v1/bindings/dtarm/dtarm.gen.go
-      - abigen --abi v1/watcher/bundle/DTARequestSettlementU.abi.json --pkg dtars --out v1/bindings/dtars/dtars.gen.go
+      - go generate ./v1/bindings
       - echo "✅ Bindings generated"
     sources:
       - v1/watcher/bundle/*.abi.json

@@ -97,7 +97,7 @@ func OnLog(cfg *workflows.Config, rt cre.Runtime, payload *evm.Log, confidence a
 		return "", err
 	}
 
-	verifiableEvent, err := workflows.BuildVerifiableEventForEVMEvent(cfg, event, cfg.Service, eventName, &referenceDataMap)
+	verifiableEvent, err := workflows.BuildVerifiableEventForEVMEvent(rt, cfg, event, cfg.Service, eventName, &referenceDataMap)
 	if err != nil {
 		return "", err
 	}
@@ -109,7 +109,7 @@ func OnLog(cfg *workflows.Config, rt cre.Runtime, payload *evm.Log, confidence a
 
 	rt.Logger().Info("verifiableEvent", "encodedVerifiableEvent", encodedVerifiableEvent)
 
-	return workflows.SignAndPostVerifiableEvent(cfg, rt, verifiableEvent)
+	return workflows.SignAndPostVerifiableEvent(rt, cfg, verifiableEvent)
 }
 
 func buildReferenceDataFromDTARequestManagementEvent(rt cre.Runtime, cfg *workflows.Config, event apiModels.EVMEvent) (*workflows.ReferenceData, error) {

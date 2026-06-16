@@ -103,6 +103,8 @@ tasks:
       - cd {{ .VERSION }}/watcher && make build
       - echo "✅ {{ .VERSION }} watcher bundle built"
     sources:
+      - "go.mod"
+      - "go.sum"
       - "{{ .VERSION }}/watcher/**/*.go"
       - "{{ .VERSION }}/watcher/handler/**/*.go"
       - "{{ .VERSION }}/watcher/bundle/*.abi.json"
@@ -135,6 +137,49 @@ tasks:
       - task: watcher:build:one
         vars:
           VERSION: v2
+
+  watcher:verify:
+    desc: "Verify committed WASM bundles match a fresh build (same check as CI)"
+    cmds:
+      - |
+        set -euo pipefail
+        failed=0
+        for f in \
+          v1/watcher/bundle/binary.wasm.br.b64 \
+          v2/watcher/bundle/binary.wasm.br.b64
+        do
+          echo ""
+          echo "Checking $f..."
+          if [ ! -f "$f" ]; then
+            echo "❌ Missing file after build: $f"
+            failed=1
+            continue
+          fi
+          if ! git ls-files --error-unmatch "$f" >/dev/null 2>&1; then
+            echo "❌ $f is not tracked by git — add and commit it"
+            failed=1
+            continue
+          fi
+          if command -v sha256sum >/dev/null 2>&1; then
+            built_hash=$(sha256sum "$f" | awk '{print $1}')
+            committed_hash=$(git show HEAD:"$f" | sha256sum | awk '{print $1}')
+          else
+            built_hash=$(shasum -a 256 "$f" | awk '{print $1}')
+            committed_hash=$(git show HEAD:"$f" | shasum -a 256 | awk '{print $1}')
+          fi
+          if [ "$built_hash" != "$committed_hash" ]; then
+            echo "❌ $f does not match the committed version in git"
+            echo "   built:     $built_hash"
+            echo "   committed: $committed_hash"
+            echo "   Run: task watcher:build --force && git add $f"
+            failed=1
+          else
+            echo "✅ $f OK ($built_hash)"
+          fi
+        done
+        if [ "$failed" -ne 0 ]; then
+          exit 1
+        fi
 
   watcher:check:sizes:
     desc: "Check WASM binary and config sizes against CRE limits"

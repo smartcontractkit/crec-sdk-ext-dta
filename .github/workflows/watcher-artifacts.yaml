@@ -7,9 +7,7 @@ on:
 
 jobs:
   verify:
-    # WASM output depends on the Go host platform (GOHOSTOS/GOHOSTARCH).
-    # Developers build on macOS; use the same host here so local rebuilds match CI.
-    runs-on: macos-latest
+    runs-on: ubuntu-latest
     permissions:
       contents: read
     steps:
@@ -22,65 +20,83 @@ jobs:
           git config core.autocrlf false
           git config core.eol lf
 
-      - name: Install Go from go.dev
-        run: |
-          set -euo pipefail
-          GO_VERSION=$(grep '^go ' go.mod | awk '{print $2}')
-          ARCH=$(uname -m)
-          case "$ARCH" in
-            arm64) GO_ARCH=arm64 ;;
-            x86_64) GO_ARCH=amd64 ;;
-            *) echo "Unsupported macOS arch: $ARCH" >&2; exit 1 ;;
-          esac
-          GO_TARBALL="go${GO_VERSION}.darwin-${GO_ARCH}.tar.gz"
-          GO_BASE="https://dl.google.com/go"
-          curl -fsSL "${GO_BASE}/${GO_TARBALL}" -o "${GO_TARBALL}"
-          curl -fsSL "${GO_BASE}/${GO_TARBALL}.sha256" -o "${GO_TARBALL}.sha256"
-          EXPECTED_SHA=$(tr -d '[:space:]' < "${GO_TARBALL}.sha256")
-          ACTUAL_SHA=$(shasum -a 256 "${GO_TARBALL}" | awk '{print $1}')
-          if [ "$EXPECTED_SHA" != "$ACTUAL_SHA" ]; then
-            echo "❌ Go tarball checksum mismatch"
-            exit 1
-          fi
-          sudo rm -rf /usr/local/go
-          sudo tar -C /usr/local -xzf "${GO_TARBALL}"
-          echo "/usr/local/go/bin" >> "$GITHUB_PATH"
-          echo "GOROOT=/usr/local/go" >> "$GITHUB_ENV"
-          echo "GOTOOLCHAIN=local" >> "$GITHUB_ENV"
-
-      - name: Verify Go toolchain
-        run: |
-          set -euo pipefail
-          go version
-          which go
-          EXPECTED=$(grep '^go ' go.mod | awk '{print $2}')
-          ACTUAL=$(go version | awk '{print $3}' | sed 's/go//')
-          if [ "$EXPECTED" != "$ACTUAL" ]; then
-            echo "❌ Go version mismatch: expected $EXPECTED, actual $ACTUAL"
-            exit 1
-          fi
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
 
       - name: Install Task
         run: sh -c "$(curl --location https://taskfile.dev/install.sh)" -- -d -b /usr/local/bin
 
-      - name: Install bc and brotli 1.2.0
+      - name: Install bc
+        run: sudo apt-get update && sudo apt-get install -y bc
+
+      - name: Install brotli 1.2.0
         run: |
-          set -euo pipefail
-          brew install bc brotli
-          if ! brotli --version 2>&1 | grep -q "1.2.0"; then
-            echo "❌ Expected brotli 1.2.0, got: $(brotli --version 2>&1)"
-            exit 1
-          fi
+          sudo apt-get update
+          sudo apt-get install -y cmake build-essential wget
+          BROTLI_VERSION=1.2.0
+          cd /tmp
+          wget -q https://github.com/google/brotli/archive/v${BROTLI_VERSION}.tar.gz
+          tar -xzf v${BROTLI_VERSION}.tar.gz
+          cd brotli-${BROTLI_VERSION}
+          mkdir out && cd out
+          cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr ..
+          cmake --build . --config Release
+          sudo cmake --build . --config Release --target install
+          sudo ldconfig
+          brotli --version
 
       - name: Build watcher WASM
         run: |
           set -euo pipefail
+          EXPECTED_GO_VERSION=$(grep '^go ' go.mod | awk '{print $2}')
+          ACTUAL_GO_VERSION=$(go version | awk '{print $3}' | sed 's/go//')
+          if [ "$EXPECTED_GO_VERSION" != "$ACTUAL_GO_VERSION" ]; then
+            echo "❌ Go version mismatch: expected $EXPECTED_GO_VERSION (go.mod), actual $ACTUAL_GO_VERSION"
+            exit 1
+          fi
           go clean -cache
           go mod download
-          task watcher:build --force
+          task watcher:build
 
       - name: Verify committed WASM matches build
-        run: task watcher:verify
+        run: |
+          set -euo pipefail
+          failed=0
+          # Only binary.wasm.br.b64 is tracked; binary.wasm is gitignored (embed uses .br.b64)
+          for f in \
+            v1/watcher/bundle/binary.wasm.br.b64 \
+            v2/watcher/bundle/binary.wasm.br.b64
+          do
+            echo ""
+            echo "Checking $f..."
+            if [ ! -f "$f" ]; then
+              echo "❌ Missing file after build: $f"
+              failed=1
+              continue
+            fi
+            if ! git ls-files --error-unmatch "$f" >/dev/null 2>&1; then
+              echo "❌ $f is not tracked by git — add and commit it"
+              failed=1
+              continue
+            fi
+            built_hash=$(sha256sum "$f" | awk '{print $1}')
+            committed_hash=$(git show HEAD:"$f" | sha256sum | awk '{print $1}')
+            if [ "$built_hash" != "$committed_hash" ]; then
+              echo "❌ $f does not match the committed version in git"
+              echo "   Rebuild and commit:"
+              echo "     task watcher:build"
+              echo "     git add v1/watcher/bundle/binary.wasm.br.b64 v2/watcher/bundle/binary.wasm.br.b64"
+              echo "   If hashes still differ, align Go $(grep '^go ' go.mod | awk '{print $2}') and brotli 1.2.0 with CI."
+              failed=1
+            else
+              echo "✅ $f OK ($built_hash)"
+            fi
+          done
+          if [ "$failed" -ne 0 ]; then
+            exit 1
+          fi
 
       - name: Check WASM and config sizes
         run: task watcher:check:sizes:all

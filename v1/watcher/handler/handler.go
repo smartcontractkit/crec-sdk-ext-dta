@@ -108,7 +108,6 @@ func OnLog(cfg *workflows.Config, rt cre.Runtime, payload *evm.Log, confidence a
 	}
 
 	rt.Logger().Info("verifiableEvent", "encodedVerifiableEvent", encodedVerifiableEvent)
-
 	return workflows.SignAndPostVerifiableEvent(rt, cfg, verifiableEvent)
 }
 

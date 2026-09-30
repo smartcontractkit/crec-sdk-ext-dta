@@ -8,8 +8,8 @@ require (
 	github.com/smartcontractkit/cre-sdk-go v1.11.0
 	github.com/smartcontractkit/cre-sdk-go/capabilities/blockchain/evm v0.10.0
 	github.com/smartcontractkit/cre-sdk-go/capabilities/networking/http v1.3.0
-	github.com/smartcontractkit/crec-api-go v0.7.4
-	github.com/smartcontractkit/crec-sdk v0.7.6
+	github.com/smartcontractkit/crec-api-go v0.8.0
+	github.com/smartcontractkit/crec-sdk v0.8.0
 	github.com/smartcontractkit/crec-workflow-utils v0.1.3
 	github.com/stretchr/testify v1.11.1
 )
@@ -117,7 +117,7 @@ require (
 	golang.org/x/sys v0.45.0 // indirect
 	golang.org/x/text v0.37.0 // indirect
 	golang.org/x/time v0.14.0 // indirect
-	google.golang.org/protobuf v1.36.11 // indirect
+	google.golang.org/protobuf v1.36.12 // indirect
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
